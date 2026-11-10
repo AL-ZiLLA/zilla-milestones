@@ -31,5 +31,10 @@
     "tailwindcss": "3.4.17",
     "typescript": "5.9.2",
     "vitest": "3.2.4"
+  },
+  "allowScripts": {
+    "@bryntum/gantt-trial@7.3.8": true,
+    "@bryntum/gantt-trial-lib@1.0.1": true,
+    "esbuild@0.28.2": true
   }
 }

@@ -188,7 +188,19 @@ export async function simulatePayment(
     },
     project,
   );
-  if (!paymentWasRecorded(payload) && mapPaypalInvoiceStatus(payload) !== "paid") {
+  let confirmed =
+    paymentWasRecorded(payload) || mapPaypalInvoiceStatus(payload) === "paid";
+  // Toolkit may return a PayPal 200 body without success/status, or an error if the
+  // invoice was already marked paid. Re-read the invoice as the source of truth.
+  if (!confirmed) {
+    const remote = await callPaypalTool(
+      "get_invoice",
+      { invoice_id: phase.paypalInvoiceId },
+      project,
+    );
+    confirmed = mapPaypalInvoiceStatus(remote) === "paid";
+  }
+  if (!confirmed) {
     throw new ActionError("PayPal did not confirm the payment.");
   }
   const next = touch({

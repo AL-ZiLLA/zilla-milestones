@@ -219,6 +219,8 @@ export function paymentWasRecorded(payload: unknown): boolean {
   if (!payload || typeof payload !== "object") return false;
   const record = payload as Record<string, unknown>;
   if (record.success === true) return true;
+  // PayPal often returns HTTP 200 with only a payment_id for POST .../payments.
+  if (typeof record.payment_id === "string" && record.payment_id.length > 0) return true;
   const status = String(record.status || "").toUpperCase();
   return status === "PAID" || status === "MARKED_AS_PAID";
 }
