@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(214, 242, 106, 0.12), transparent 55%),
+    radial-gradient(900px 400px at 100% 0%, rgba(47, 125, 98, 0.18), transparent 50%),
+    #07110e;
+}
+
+.panel {
+  background: rgba(16, 26, 22, 0.92);
+  border: 1px solid #24382f;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+}
+
+.zilla-gantt {
+  height: 640px;
+  min-height: 520px;
+  background: #0c1612;
+}
+
+.zilla-gantt .b-gantt,
+.zilla-gantt .b-grid-panel-body,
+.zilla-gantt .b-sch-foreground {
+  border-radius: 0 0 18px 18px;
+}
+
+.zilla-pill,
+.zilla-gantt .zilla-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.zilla-pill-draft,
+.zilla-gantt .zilla-pill-draft {
+  background: rgba(139, 156, 168, 0.18);
+  color: #d5dee6;
+}
+
+.zilla-pill-invoiced,
+.zilla-gantt .zilla-pill-invoiced {
+  background: rgba(226, 179, 64, 0.18);
+  color: #f3d48a;
+}
+
+.zilla-pill-paid,
+.zilla-gantt .zilla-pill-paid {
+  background: rgba(61, 220, 151, 0.16);
+  color: #9ff0cb;
+}
+
+.zilla-pill-overdue,
+.zilla-gantt .zilla-pill-overdue {
+  background: rgba(255, 107, 107, 0.16);
+  color: #ffb4b4;
+}
+
+.zilla-pill-cancelled,
+.zilla-gantt .zilla-pill-cancelled {
+  background: rgba(183, 148, 246, 0.16);
+  color: #e0d0ff;
+}
+
+.zilla-gantt .b-gantt-task.zilla-draft,
+.zilla-gantt .b-gantt-task-wrap.zilla-draft .b-gantt-task,
+.zilla-gantt .b-sch-event.zilla-draft {
+  background-color: #60707c !important;
+  border-color: #c5d0d8 !important;
+}
+
+.zilla-gantt .b-gantt-task.zilla-invoiced,
+.zilla-gantt .b-gantt-task-wrap.zilla-invoiced .b-gantt-task,
+.zilla-gantt .b-sch-event.zilla-invoiced {
+  background-color: #c8962e !important;
+  border-color: #f3d48a !important;
+}
+
+.zilla-gantt .b-gantt-task.zilla-paid,
+.zilla-gantt .b-gantt-task-wrap.zilla-paid .b-gantt-task,
+.zilla-gantt .b-sch-event.zilla-paid {
+  background-color: #1f9d68 !important;
+  border-color: #9ff0cb !important;
+}
+
+.zilla-gantt .b-gantt-task.zilla-overdue,
+.zilla-gantt .b-gantt-task-wrap.zilla-overdue .b-gantt-task,
+.zilla-gantt .b-sch-event.zilla-overdue {
+  background-color: #d4534c !important;
+  border-color: #ffb4b4 !important;
+}
+
+.zilla-gantt .b-gantt-task.zilla-cancelled,
+.zilla-gantt .b-gantt-task-wrap.zilla-cancelled .b-gantt-task,
+.zilla-gantt .b-sch-event.zilla-cancelled {
+  background-color: #8d74b5 !important;
+  border-color: #e0d0ff !important;
+}
+
+.dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.dot-draft { background: #8b9ca8; }
+.dot-invoiced { background: #e2b340; }
+.dot-paid { background: #3ddc97; }
+.dot-overdue { background: #ff6b6b; }
+.dot-cancelled { background: #b794f6; }
