@@ -13,6 +13,7 @@ const display = Syne({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: "Zilla OS / Milestones",
   description: "Get paid before the next phase starts. Zilla Milestones turns a scope into PayPal-invoiced phases on a Bryntum Gantt.",
   applicationName: "Zilla OS",

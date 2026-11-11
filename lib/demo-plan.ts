@@ -75,6 +75,7 @@ export const SAMPLE_SCOPES = [
     title: "HVAC booking portal",
     budget: "18000",
     email: "billing@example.com",
+    clientName: "Jordan",
     scope: HVAC_SCOPE,
   },
   {
@@ -82,6 +83,7 @@ export const SAMPLE_SCOPES = [
     title: "Harbor & Pine commerce site",
     budget: "12000",
     email: "billing@example.com",
+    clientName: "Harbor & Pine",
     scope: HARBOR_SCOPE,
   },
 ] as const;

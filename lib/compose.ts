@@ -2,6 +2,8 @@ import { dependentIds } from "@/lib/schedule";
 import {
   buildOverdueDraft,
   chooseClientUpdate,
+  clientFirstName,
+  usableClientName,
 } from "@/lib/email";
 import { formatMoney } from "@/lib/money";
 import { cannedAiEnabled } from "@/lib/mode";
@@ -32,9 +34,13 @@ export function clientUpdatePrompt(project: Project, phase: Phase, shifted: Phas
     `Tone: ${clientUpdateTone(phase.slipDaysApplied)}.`,
     "Be specific. Cite the dollar amount, the due date, and the schedule impact using the facts below.",
     "Do not say the message has already been sent.",
+    "Do not mention the billing email address. It is not the client's name.",
+    clientFirstName(project.clientName)
+      ? `Start with "Hello ${clientFirstName(project.clientName)},".`
+      : 'Start with "Hello,".',
     'Return only JSON: {"subject":"...","body":"..."}',
     `Project: ${project.name}`,
-    `Client: ${project.clientEmail}`,
+    `Client name: ${usableClientName(project.clientName) ?? "the client"}`,
     `Milestone: ${phase.name}`,
     `Amount: ${formatMoney(phase.amount)}`,
     `Due date: ${phase.dueDate}`,
@@ -62,13 +68,14 @@ export async function writeClientUpdate(
     amountLabel: formatMoney(phase.amount),
     dueDate: phase.dueDate,
     shiftedNames: shifted.map((item) => item.name),
+    clientName: project.clientName,
   };
   try {
     const message = await grokComplete([
       {
         role: "system",
         content:
-          "You draft client emails for Zilla Labs. Return JSON only. Never claim a message was sent.",
+          "You draft client emails for Zilla Labs. Return JSON only. Never claim a message was sent. Never greet the client by an email address.",
       },
       { role: "user", content: clientUpdatePrompt(project, phase, shifted) },
     ]);

@@ -42,3 +42,17 @@ export function daysBetween(earlier: string, later: string): number {
   const end = Date.parse(`${later}T00:00:00Z`);
   return Math.round((end - start) / DAY);
 }
+
+const SHORT_DATE = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+export function formatShortDate(isoDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  if (!match) return isoDate;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return SHORT_DATE.format(date);
+}

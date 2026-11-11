@@ -2,8 +2,24 @@ import { formatMoney } from "@/lib/money";
 import { extractJson } from "@/lib/schema";
 import type { EmailDraft, Phase, Project } from "@/lib/types";
 
+export function usableClientName(name?: string | null): string | undefined {
+  const trimmed = name?.trim();
+  if (!trimmed || trimmed.includes("@")) return undefined;
+  return trimmed;
+}
+
+export function clientFirstName(name?: string | null): string | undefined {
+  return usableClientName(name)?.split(/\s+/)[0];
+}
+
+export function scrubClientGreeting(body: string, clientName?: string | null): string {
+  const first = clientFirstName(clientName);
+  const hello = first ? `Hello ${first},` : "Hello,";
+  return body.replace(/^\s*(?:dear|hello|hi)\s+[^\n,]*@[^\n,]*,/i, hello);
+}
+
 export function buildOverdueDraft(
-  project: Pick<Project, "name" | "clientEmail">,
+  project: Pick<Project, "name" | "clientName">,
   phase: Phase,
   shifted: Pick<Phase, "name" | "startDate">[],
   createdAt: string,
@@ -14,8 +30,10 @@ export function buildOverdueDraft(
       ? shifted.map((item) => `• ${item.name} now starts ${item.startDate}`).join("\n")
       : "No later milestone is queued behind this one, so those dates stay put.";
 
+  const first = clientFirstName(project.clientName);
+  const preparedFor = usableClientName(project.clientName) ?? "the client";
   const body = [
-    "Hello,",
+    first ? `Hello ${first},` : "Hello,",
     "",
     `A short update on ${project.name}.`,
     "",
@@ -28,7 +46,7 @@ export function buildOverdueDraft(
     "Thank you,",
     "Zilla Labs",
     "",
-    `Prepared for ${project.clientEmail}. This draft is waiting for a person to approve it. It has not been sent.`,
+    `Prepared for ${preparedFor}. This draft is waiting for a person to approve it. It has not been sent.`,
   ].join("\n");
 
   return {
@@ -61,7 +79,7 @@ export function reminderNote(body: string): string {
 export function chooseClientUpdate(
   modelText: string,
   template: Pick<EmailDraft, "subject" | "body">,
-  facts: { amountLabel: string; dueDate: string; shiftedNames: string[] },
+  facts: { amountLabel: string; dueDate: string; shiftedNames: string[]; clientName?: string },
 ): { subject: string; body: string } {
   const fallback = { subject: template.subject, body: template.body };
   try {
@@ -72,7 +90,10 @@ export function chooseClientUpdate(
     if (!subject || !body) return fallback;
     if (!body.includes(facts.amountLabel) || !body.includes(facts.dueDate)) return fallback;
     if (facts.shiftedNames.some((name) => !body.includes(name))) return fallback;
-    return { subject: subject.slice(0, 200), body: withApprovalFooter(body) };
+    return {
+      subject: subject.slice(0, 200),
+      body: withApprovalFooter(scrubClientGreeting(body, facts.clientName)),
+    };
   } catch {
     return fallback;
   }

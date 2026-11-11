@@ -98,7 +98,7 @@ Planning and chat use xAI Grok at `XAI_BASE_URL` (default `https://api.x.ai/v1`)
 
 The chart is Bryntum Gantt Community 8.0.0 (`@bryntum/gantt-community`), MIT licensed. It replaces the earlier trial package, so the chart does not show a trial watermark. Font Awesome comes from `@bryntum/core-community` at the same version. The React wrapper is not required: a client component mounts `Gantt` with `gantt.css` and the Stockholm Dark theme.
 
-Tasks are `manuallyScheduled` on a 7-day calendar so our dates stay put. The view preset is week-and-month, and the tick size is fitted so the bars sit inside a 1920×1080 frame. Name and date columns are wide enough to read. Bar color follows payment state (Draft, Invoiced, Paid, Overdue) with a progress fill. A duration-zero diamond sits on each dependency as a payment gate. Downstream rows show a padlock until the upstream phase is paid.
+Tasks are `manuallyScheduled` on a 7-day calendar so our dates stay put. The view preset is week-and-month, and the tick size is fitted so the bars sit inside a 1920×1080 frame. When a tick would be narrower than 64px, the week header drops to the day number so labels do not overlap. Start and finish columns use a short date such as Feb 17, 2027. Bar color follows payment state (Draft, Invoiced, Paid, Overdue) with a progress fill. A duration-zero diamond sits on each dependency as a payment gate. Downstream rows show a padlock until the upstream phase is paid.
 
 Community does not include the Business/Enterprise features (full task editor, baselines, progress line, PDF export). Those are left off.
 
@@ -119,6 +119,7 @@ Community does not include the Business/Enterprise features (full task editor, b
 | `SUPABASE_URL` | for hosted sessions | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | for hosted sessions | Server-only service role key. Never expose it to the browser |
 | `ZILLA_STORE_PATH` | no | JSON file path when Supabase is not set |
+| `NEXT_PUBLIC_SITE_URL` | no | Public origin for Open Graph URLs. Defaults to `http://localhost:3000` |
 
 Never commit `.env.local` or a service role key. Only `.env.example` is in git.
 

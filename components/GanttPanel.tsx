@@ -5,9 +5,10 @@ import "@bryntum/core-community/fontawesome/css/fontawesome.css";
 import "@bryntum/core-community/fontawesome/css/solid.css";
 import "@bryntum/gantt-community/gantt.css";
 import "@bryntum/gantt-community/stockholm-dark.css";
-import { addDays, daysBetween } from "@/lib/dates";
+import { addDays, daysBetween, formatShortDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { paymentProgress, STATUS_LABEL } from "@/lib/status";
+import { timelineHeader, timelineTickSize } from "@/lib/timeline";
 import type { PaymentStatus, Phase } from "@/lib/types";
 
 interface GanttLike {
@@ -15,8 +16,10 @@ interface GanttLike {
   project: { loadInlineData: (data: object) => Promise<void> };
   setTimeSpan?: (start: Date, end: Date) => void;
   tickSize?: number;
+  viewPreset?: unknown;
   columns?: { getAt: (index: number) => { width: number } | undefined };
   subGrids?: { locked?: { width: number } };
+  _zillaHeader?: string;
 }
 
 interface BryntumModule {
@@ -47,12 +50,12 @@ function columnLayout(width: number): {
   locked: number;
 } {
   if (width >= 1400) {
-    return { name: 220, date: 118, amount: 128, payment: 118, gate: 76, locked: 220 + 118 + 118 + 128 + 118 + 76 };
+    return { name: 188, date: 132, amount: 120, payment: 112, gate: 72, locked: 188 + 132 + 132 + 120 + 112 + 72 };
   }
   if (width >= 1000) {
-    return { name: 180, date: 108, amount: 116, payment: 108, gate: 68, locked: 180 + 108 + 108 + 116 + 108 + 68 };
+    return { name: 160, date: 124, amount: 112, payment: 104, gate: 68, locked: 160 + 124 + 124 + 112 + 104 + 68 };
   }
-  return { name: 148, date: 96, amount: 104, payment: 96, gate: 64, locked: 148 + 96 + 96 + 104 + 96 + 64 };
+  return { name: 140, date: 124, amount: 104, payment: 96, gate: 64, locked: 140 + 124 + 124 + 104 + 96 + 64 };
 }
 
 function chartData(phases: Phase[]) {
@@ -92,8 +95,8 @@ function chartData(phases: Phase[]) {
       blocked: phase.blocked,
       isGate: false,
       gateState: phase.blocked ? "locked" : "open",
-      zillaStart: phase.startDate,
-      zillaEnd: phase.endDate,
+      zillaStart: formatShortDate(phase.startDate),
+      zillaEnd: formatShortDate(phase.endDate),
       cls: `zilla-bar zilla-${phase.paymentStatus}${phase.blocked ? " zilla-locked" : ""}`,
     };
     const diamonds = (gateAfter.get(phase.id) ?? []).map((gate) => ({
@@ -112,8 +115,8 @@ function chartData(phases: Phase[]) {
       blocked: !gate.open,
       isGate: true,
       gateState: gate.open ? "gate-open" : "gate-locked",
-      zillaStart: gate.startDate,
-      zillaEnd: gate.startDate,
+      zillaStart: formatShortDate(gate.startDate),
+      zillaEnd: formatShortDate(gate.startDate),
       cls: `zilla-gate ${gate.open ? "zilla-gate-open" : "zilla-gate-locked"}`,
     }));
     return [phaseTask, ...diamonds];
@@ -169,9 +172,14 @@ function frame(chart: GanttLike, phases: Phase[], host: HTMLElement) {
   if (!start || !end) return;
   const startDate = addDays(start, -2);
   const endDate = addDays(end, 7);
-  const weeks = Math.max(1, Math.ceil(daysBetween(startDate, endDate) / 7));
   const timeline = Math.max(220, host.clientWidth - layout.locked - 8);
-  chart.tickSize = Math.max(28, Math.min(120, Math.floor(timeline / weeks)));
+  const tick = timelineTickSize(timeline, daysBetween(startDate, endDate));
+  const header = timelineHeader(tick);
+  if (chart._zillaHeader !== header.id) {
+    chart.viewPreset = header;
+    chart._zillaHeader = header.id;
+  }
+  chart.tickSize = tick;
   chart.setTimeSpan(new Date(`${startDate}T00:00:00`), new Date(`${endDate}T00:00:00`));
 }
 
@@ -236,13 +244,7 @@ export function GanttPanel({
           appendTo: host,
           rowHeight: 46,
           barMargin: 8,
-          viewPreset: {
-            base: "weekAndMonth",
-            headers: [
-              { unit: "month", dateFormat: "MMM YYYY" },
-              { unit: "week", dateFormat: "DD MMM" },
-            ],
-          },
+          viewPreset: timelineHeader(120),
           subGridConfigs: {
             locked: { width: layout.locked },
           },

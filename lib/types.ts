@@ -65,6 +65,7 @@ export interface Project {
   summary: string;
   scope: string;
   clientEmail: string;
+  clientName?: string;
   budget: number;
   pyusdNote: boolean;
   createdAt: string;

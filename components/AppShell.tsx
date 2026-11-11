@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { GanttPanel } from "@/components/GanttPanel";
+import { RichText } from "@/components/RichText";
 import { SAMPLE_SCOPE, SAMPLE_SCOPES } from "@/lib/demo-plan";
 import { formatMoney, summarizeMoney } from "@/lib/money";
 import { STATUS_LABEL } from "@/lib/status";
@@ -56,18 +57,25 @@ export function AppShell() {
   const [selectedId, setSelectedId] = useState<string>("");
   const [scope, setScope] = useState(SAMPLE_SCOPE);
   const [clientEmail, setClientEmail] = useState("billing@example.com");
+  const [clientName, setClientName] = useState("Jordan");
+  const [confirmNew, setConfirmNew] = useState(false);
   const [budget, setBudget] = useState("18000");
   const [pyusdNote, setPyusdNote] = useState(true);
   const [chatText, setChatText] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seenEvents = useRef(new Set<string>());
+  const chatRef = useRef<HTMLDivElement>(null);
+  const actionsRef = useRef<HTMLOListElement>(null);
+  const [actionsOpen, setActionsOpen] = useState(true);
   const primed = useRef(false);
   const busyRef = useRef(false);
   busyRef.current = busy;
 
   function pushToast(text: string, tone: "ok" | "err" = "ok") {
     const id = Date.now() + Math.random();
-    setToasts((items) => [...items, { id, text, tone }].slice(-4));
+    const clean = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "the client").replace(/\s+/g, " ").trim();
+    const preview = clean.length > 160 ? `${clean.slice(0, 157)}…` : clean;
+    setToasts((items) => [...items, { id, text: preview, tone }].slice(-1));
     window.setTimeout(() => {
       setToasts((items) => items.filter((item) => item.id !== id));
     }, 6500);
@@ -153,6 +161,38 @@ export function AppShell() {
     [project],
   );
   const money = project ? summarizeMoney(project) : null;
+  const messageCount = project?.messages.length ?? 0;
+  const actionCount = project?.actions?.length ?? 0;
+
+  useEffect(() => {
+    const node = chatRef.current;
+    if (!node) return;
+    const scroll = () => {
+      node.scrollTop = node.scrollHeight;
+    };
+    scroll();
+    const frame = window.requestAnimationFrame(scroll);
+    const timer = window.setTimeout(scroll, 60);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [messageCount, projectId]);
+
+  useEffect(() => {
+    const node = actionsRef.current;
+    if (!node) return;
+    const scroll = () => {
+      node.scrollTop = node.scrollHeight;
+    };
+    scroll();
+    const frame = window.requestAnimationFrame(scroll);
+    return () => window.cancelAnimationFrame(frame);
+  }, [actionCount, projectId, actionsOpen]);
+
+  useEffect(() => {
+    if (pendingDrafts.length > 0) setActionsOpen(false);
+  }, [pendingDrafts.length]);
 
   async function run(task: () => Promise<ApiPayload>) {
     setBusy(true);
@@ -182,6 +222,7 @@ export function AppShell() {
       const payload = await postJson("/api/project", {
         scope,
         clientEmail,
+        clientName: clientName.trim() || "Jordan",
         budget: amount,
         pyusdNote,
       });
@@ -251,6 +292,7 @@ export function AppShell() {
                   setScope(sample.scope);
                   setBudget(sample.budget);
                   setClientEmail(sample.email);
+                  setClientName(sample.clientName);
                 }}
               >
                 <span className="block font-medium text-white">{sample.title}</span>
@@ -268,7 +310,16 @@ export function AppShell() {
                 required
               />
             </label>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="block text-sm text-zinc-300">
+                Client name
+                <input
+                  className="mt-2 w-full rounded-2xl border border-line bg-ink px-4 py-3 text-sm text-white outline-none ring-lime/40 focus:ring"
+                  value={clientName}
+                  onChange={(event) => setClientName(event.target.value)}
+                  required
+                />
+              </label>
               <label className="block text-sm text-zinc-300">
                 Client billing email
                 <input
@@ -331,15 +382,7 @@ export function AppShell() {
               <button
                 type="button"
                 className="rounded-full border border-line px-4 py-2 text-sm text-zinc-300"
-                onClick={() => {
-                  if (!window.confirm("Clear this plan and start over?")) return;
-                  void run(async () => {
-                    const response = await fetch("/api/project", { method: "DELETE" });
-                    const payload = (await response.json()) as ApiPayload;
-                    setSelectedId("");
-                    return payload;
-                  });
-                }}
+                onClick={() => setConfirmNew(true)}
               >
                 New plan
               </button>
@@ -397,15 +440,15 @@ export function AppShell() {
             ) : null}
           </div>
 
-          <aside className="panel flex min-h-[520px] flex-col rounded-3xl lg:min-h-0">
+          <aside className="panel flex min-h-[520px] flex-col overflow-hidden rounded-3xl lg:min-h-0">
             {pendingDrafts.map((draft) => (
-              <article key={draft.id} className="border-b border-line px-4 py-3" data-testid="approval-card">
+              <article key={draft.id} className="shrink-0 border-b border-line px-4 py-3" data-testid="approval-card">
                 <p className="text-xs uppercase tracking-[0.16em] text-lime">Approval required</p>
                 <h2 className="mt-1 font-display text-lg text-white">{draft.subject}</h2>
                 <p className="mt-1 text-xs text-zinc-400">
                   Approve sends this note as a PayPal invoice reminder. Discard sends nothing.
                 </p>
-                <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap font-sans text-sm leading-6 text-zinc-200">
+                <pre className="mt-2 max-h-[28rem] overflow-auto whitespace-pre-wrap font-sans text-sm leading-5 text-zinc-200">
                   {draft.body}
                 </pre>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -428,31 +471,42 @@ export function AppShell() {
                 </div>
               </article>
             ))}
+            <details
+              className="shrink-0 border-b border-line"
+              open={actionsOpen}
+              onToggle={(event) => {
+                const open = event.currentTarget.open;
+                setActionsOpen((current) => (current === open ? current : open));
+              }}
+            >
+              <summary className="cursor-pointer px-4 py-3">
+                <span className="font-display text-lg text-white">Agent actions</span>
+                <span className="mt-1 block text-xs text-zinc-400">
+                  Each tool call, in order, with the PayPal API, status, and latency.
+                </span>
+              </summary>
+              <ol ref={actionsRef} className="max-h-80 space-y-2 overflow-y-auto px-4 pb-3" data-testid="agent-actions">
+                {(project.actions ?? []).length === 0 ? (
+                  <li className="text-sm text-zinc-500">No tool calls yet. Invoice a phase to start the trail.</li>
+                ) : (
+                  (project.actions ?? []).map((action) => <ActionRow key={action.id} action={action} />)
+                )}
+              </ol>
+            </details>
             <div className="border-b border-line px-4 py-3">
-              <h2 className="font-display text-lg text-white">Agent actions</h2>
-              <p className="text-xs text-zinc-400">Each tool call, in order, with the PayPal API, status, and latency.</p>
-            </div>
-            <ol className="max-h-64 space-y-2 overflow-y-auto px-4 py-3 lg:max-h-[40%]" data-testid="agent-actions">
-              {(project.actions ?? []).length === 0 ? (
-                <li className="text-sm text-zinc-500">No tool calls yet. Invoice a phase to start the trail.</li>
-              ) : (
-                (project.actions ?? []).map((action) => <ActionRow key={action.id} action={action} />)
-              )}
-            </ol>
-            <div className="border-b border-t border-line px-4 py-3">
               <h2 className="font-display text-lg text-white">Agent</h2>
               <p className="text-xs text-zinc-400">Ask what is unpaid, or to invoice or move a phase.</p>
             </div>
-            <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+            <div ref={chatRef} className="min-h-36 flex-1 space-y-3 overflow-y-auto px-4 py-3">
               {project.messages.map((message, index) => (
-                <p
+                <div
                   key={`${message.at}-${index}`}
-                  className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-6 ${
+                  className={`rounded-2xl px-3 py-2 text-sm leading-6 ${
                     message.role === "user" ? "bg-lime/15 text-lime" : "bg-ink text-zinc-100"
                   }`}
                 >
-                  {message.content}
-                </p>
+                  <RichText text={message.content} />
+                </div>
               ))}
             </div>
             <div className="space-y-2 border-t border-line p-3">
@@ -494,19 +548,53 @@ export function AppShell() {
           </aside>
         </section>
       )}
+      {confirmNew ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-4" role="dialog" aria-modal="true" aria-labelledby="confirm-new-title">
+          <div className="panel w-full max-w-md rounded-3xl p-6" data-testid="confirm-new-plan">
+            <h2 id="confirm-new-title" className="font-display text-2xl text-white">Start a new plan?</h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-300">
+              This clears the milestones in this browser session. Nothing is emailed and no invoice is cancelled.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-full bg-lime px-4 py-2 text-sm font-semibold text-ink"
+                onClick={() => {
+                  setConfirmNew(false);
+                  void run(async () => {
+                    const response = await fetch("/api/project", { method: "DELETE" });
+                    const payload = (await response.json()) as ApiPayload;
+                    setSelectedId("");
+                    return payload;
+                  });
+                }}
+              >
+                Clear plan
+              </button>
+              <button
+                type="button"
+                className="rounded-full border border-line px-4 py-2 text-sm text-zinc-200"
+                onClick={() => setConfirmNew(false)}
+              >
+                Keep this plan
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="toast-stack" aria-live="polite">
         {toasts.map((toast) => (
-          <p
+          <div
             key={toast.id}
             role="status"
-            className={`rounded-2xl border px-4 py-3 text-sm shadow-card ${
+            className={`toast-card rounded-2xl border px-4 py-3 text-sm shadow-card ${
               toast.tone === "err"
                 ? "border-red-400/40 bg-red-950/90 text-red-100"
                 : "border-lime/40 bg-[#102018]/95 text-lime"
             }`}
           >
-            {toast.text}
-          </p>
+            <RichText text={toast.text} />
+          </div>
         ))}
       </div>
     </main>

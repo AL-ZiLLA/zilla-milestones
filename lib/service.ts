@@ -72,6 +72,7 @@ async function traced<T>(
 export async function createProject(input: {
   scope: string;
   clientEmail: string;
+  clientName?: string;
   budget: number;
   pyusdNote: boolean;
 }): Promise<Project> {
@@ -88,6 +89,7 @@ export async function createProject(input: {
     summary: plan.summary,
     scope: input.scope.trim(),
     clientEmail: input.clientEmail.trim(),
+    clientName: input.clientName?.trim() || "Jordan",
     budget: input.budget,
     pyusdNote: input.pyusdNote,
     createdAt: now,
@@ -200,7 +202,7 @@ export async function invoicePhase(
   );
   const next = touch({ ...working, phases: recomputeBlocks(phases) });
   const message = sent
-    ? `Sent PayPal invoice ${invoiceId} for ${phase.name} (${formatMoney(phase.amount)}) to ${project.clientEmail}. Due ${built.dueDate} (Net 7).`
+    ? `Sent PayPal invoice ${invoiceId} for ${phase.name} (${formatMoney(phase.amount)}). Due ${built.dueDate} (Net 7).`
     : `Created PayPal invoice ${invoiceId} for ${phase.name}, but sending it failed: ${sendError}`;
   return { project: next, message };
 }
@@ -444,11 +446,10 @@ export function unpaidSummary(project: Project): string {
   if (open.length === 0) return "Every milestone is paid.";
   const total = open.reduce((sum, phase) => sum + phase.amount, 0);
   const lines = open.map((phase) => {
-    const number = project.phases.findIndex((item) => item.id === phase.id) + 1;
     const gate = phase.blocked ? "blocked" : "unlocked";
-    return `${number}. ${phase.name} — ${formatMoney(phase.amount)} — ${phase.paymentStatus} — ${gate} — due ${phase.dueDate}`;
+    return `${phase.name} — ${formatMoney(phase.amount)} — ${phase.paymentStatus} — ${gate}`;
   });
-  return `Unpaid milestones (${formatMoney(total)}):\n${lines.join("\n")}`;
+  return [`**Unpaid milestones:** ${formatMoney(total)}`, ...lines.map((line) => `- ${line}`)].join("\n");
 }
 
 export function projectSnapshot(project: Project): string {
@@ -468,6 +469,7 @@ export function projectSnapshot(project: Project): string {
   return JSON.stringify(
     {
       name: project.name,
+      clientName: project.clientName ?? null,
       clientEmail: project.clientEmail,
       budget: project.budget,
       pyusdNote: project.pyusdNote,

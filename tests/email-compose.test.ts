@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clientUpdatePrompt, clientUpdateTone } from "@/lib/compose";
-import { chooseClientUpdate } from "@/lib/email";
+import { chooseClientUpdate, scrubClientGreeting } from "@/lib/email";
 import type { Phase, Project } from "@/lib/types";
 
 const phase: Phase = {
@@ -24,6 +24,7 @@ const project: Project = {
   summary: "Plan",
   scope: "Scope long enough.",
   clientEmail: "billing@example.com",
+  clientName: "Jordan Lee",
   budget: 18000,
   pyusdNote: false,
   createdAt: "2026-11-11T00:00:00.000Z",
@@ -74,5 +75,23 @@ describe("client update composition", () => {
     expect(prompt).toContain("$4,500.00");
     expect(prompt).toContain("2026-11-18");
     expect(prompt).toContain("Build now starts 2026-11-27");
+    expect(prompt).toContain("Hello Jordan,");
+    expect(prompt).not.toContain("billing@example.com");
+  });
+
+  it("replaces an email greeting with the client name", () => {
+    expect(scrubClientGreeting("Dear sb-buyer@personal.example.com,\n\nPlease pay.", "Jordan Lee")).toBe(
+      "Hello Jordan,\n\nPlease pay.",
+    );
+    const accepted = chooseClientUpdate(
+      JSON.stringify({
+        subject: "Design payment",
+        body: "Dear sb-buyer@personal.example.com,\n\nDesign ($4,500.00) was due 2026-11-18. Build moved.",
+      }),
+      template,
+      { amountLabel: "$4,500.00", dueDate: "2026-11-18", shiftedNames: ["Build"], clientName: "Jordan Lee" },
+    );
+    expect(accepted.body.startsWith("Hello Jordan,")).toBe(true);
+    expect(accepted.body).not.toContain("@");
   });
 });

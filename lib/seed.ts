@@ -6,6 +6,7 @@ import type { Project } from "@/lib/types";
 
 export const SEED_BUDGET = 18000;
 export const SEED_EMAIL = "billing@example.com";
+export const SEED_CLIENT_NAME = "Jordan";
 
 export function buildSeedProject(now = new Date()): Project {
   const plan = cannedPlan(HVAC_SCOPE);
@@ -22,6 +23,7 @@ export function buildSeedProject(now = new Date()): Project {
     summary: plan.summary,
     scope: HVAC_SCOPE,
     clientEmail: SEED_EMAIL,
+    clientName: SEED_CLIENT_NAME,
     budget: SEED_BUDGET,
     pyusdNote: true,
     createdAt,

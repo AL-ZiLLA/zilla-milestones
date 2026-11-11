@@ -28,7 +28,7 @@ export function summarizeMoney(project: { budget: number; phases: Array<{ id: st
   let atRisk = 0;
   for (const phase of project.phases) {
     if (phase.paymentStatus === "paid") paid += phase.amount;
-    if (phase.paymentStatus === "invoiced") invoiced += phase.amount;
+    if (phase.paymentStatus === "invoiced" || phase.paymentStatus === "overdue") invoiced += phase.amount;
     if (phase.paymentStatus === "paid" || phase.paymentStatus === "cancelled") continue;
     if (phase.paymentStatus === "overdue" || ancestorOverdue(phase.dependencies)) atRisk += phase.amount;
   }

@@ -12,6 +12,7 @@ export const maxDuration = 60;
 const createSchema = z.object({
   scope: z.string().trim().min(20, "Add a bit more scope so the plan has something to split."),
   clientEmail: z.string().trim().email("Enter a valid billing email."),
+  clientName: z.string().trim().min(1).max(80).optional().default("Jordan"),
   budget: z.number().positive().max(10_000_000),
   pyusdNote: z.boolean().optional().default(false),
 });
