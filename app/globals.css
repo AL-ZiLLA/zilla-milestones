@@ -22,8 +22,25 @@ body {
 
 .zilla-gantt {
   height: 100%;
-  min-height: 280px;
+  min-height: 240px;
+  max-width: 100%;
   background: #0c1612;
+}
+
+@media (display-mode: standalone) {
+  .zilla-app {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+  }
+}
+
+@media (display-mode: standalone) and (min-width: 768px) {
+  .zilla-app {
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-left: max(1rem, env(safe-area-inset-left));
+  }
 }
 
 .zilla-gantt .b-gantt,

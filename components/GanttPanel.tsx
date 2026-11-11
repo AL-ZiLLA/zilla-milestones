@@ -5,6 +5,7 @@ import "@bryntum/core-community/fontawesome/css/fontawesome.css";
 import "@bryntum/core-community/fontawesome/css/solid.css";
 import "@bryntum/gantt-community/gantt.css";
 import "@bryntum/gantt-community/stockholm-dark.css";
+import { columnLayout, type GanttColumnId } from "@/lib/gantt-columns";
 import { daysBetween, formatGanttDate, formatShortDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { paymentProgress, STATUS_LABEL } from "@/lib/status";
@@ -18,7 +19,7 @@ interface GanttLike {
   tickSize?: number;
   rowHeight?: number;
   viewPreset?: unknown;
-  columns?: { getAt: (index: number) => { width: number; minWidth?: number } | undefined };
+  columns?: { getAt: (index: number) => { width: number; minWidth?: number; hidden: boolean } | undefined };
   subGrids?: { locked?: { width: number } };
   _zillaHeader?: string;
   _zillaFitRange?: string;
@@ -43,23 +44,6 @@ function encode(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
-}
-
-function columnLayout(width: number): {
-  name: number;
-  date: number;
-  amount: number;
-  payment: number;
-  gate: number;
-  locked: number;
-} {
-  if (width >= 1350) {
-    return { name: 220, date: 108, amount: 112, payment: 96, gate: 60, locked: 220 + 108 + 108 + 112 + 96 + 60 };
-  }
-  if (width >= 1050) {
-    return { name: 210, date: 100, amount: 108, payment: 92, gate: 56, locked: 210 + 100 + 100 + 108 + 92 + 56 };
-  }
-  return { name: 204, date: 90, amount: 112, payment: 92, gate: 52, locked: 204 + 90 + 90 + 112 + 92 + 52 };
 }
 
 function planStartYear(phases: Phase[]): number {
@@ -198,12 +182,15 @@ function frame(chart: GanttLike, phases: Phase[], host: HTMLElement) {
   if (!chart.setTimeSpan || phases.length === 0) return;
   const layout = columnLayout(host.clientWidth || window.innerWidth);
   const widths = [layout.name, layout.date, layout.date, layout.amount, layout.payment, layout.gate];
+  const fields: GanttColumnId[] = ["name", "start", "finish", "amount", "payment", "gate"];
   widths.forEach((width, index) => {
     const column = chart.columns?.getAt(index);
-    if (column) {
-      column.width = width;
-      column.minWidth = width;
-    }
+    if (!column) return;
+    const hide = layout.hidden.includes(fields[index]);
+    if (column.hidden !== hide) column.hidden = hide;
+    if (hide) return;
+    column.width = width;
+    column.minWidth = width;
   });
   if (chart.subGrids?.locked) chart.subGrids.locked.width = layout.locked;
   const rowCount = phases.length + phases.reduce((count, phase) => count + phase.dependencies.length, 0);
@@ -345,12 +332,20 @@ export function GanttPanel({
             daysPerMonth: 30,
           },
           columns: [
-            { type: "name", text: "Milestone", tooltip: "Milestone", width: layout.name, minWidth: layout.name },
+            {
+              type: "name",
+              text: "Milestone",
+              tooltip: "Milestone",
+              width: layout.name,
+              minWidth: layout.name,
+              hidden: layout.hidden.includes("name"),
+            },
             {
               field: "zillaStart",
               text: "Start",
               width: layout.date,
               minWidth: layout.date,
+              hidden: layout.hidden.includes("start"),
               htmlEncode: false,
               renderer: ({ record }: { record: { get: (field: string) => unknown } }) => dateCell(record, "zillaStart", "zillaStartFull"),
             },
@@ -359,6 +354,7 @@ export function GanttPanel({
               text: "Finish",
               width: layout.date,
               minWidth: layout.date,
+              hidden: layout.hidden.includes("finish"),
               htmlEncode: false,
               renderer: ({ record }: { record: { get: (field: string) => unknown } }) => dateCell(record, "zillaEnd", "zillaEndFull"),
             },
@@ -366,6 +362,7 @@ export function GanttPanel({
               field: "amount",
               text: "Amount",
               width: layout.amount,
+              hidden: layout.hidden.includes("amount"),
               renderer: ({ value, record }: { value: unknown; record: { get: (field: string) => unknown } }) =>
                 record.get("isGate") || typeof value !== "number" ? "" : formatMoney(value),
             },
@@ -374,6 +371,7 @@ export function GanttPanel({
               text: "Pay",
               tooltip: "Payment",
               width: layout.payment,
+              hidden: layout.hidden.includes("payment"),
               htmlEncode: false,
               renderer: ({ record }: { record: { get: (field: string) => unknown } }) => {
                 if (record.get("isGate")) return `<span class="zilla-pill zilla-pill-draft">Gate</span>`;
@@ -387,6 +385,7 @@ export function GanttPanel({
               text: "Gate",
               tooltip: "Payment gate",
               width: layout.gate,
+              hidden: layout.hidden.includes("gate"),
               align: "center",
               htmlEncode: false,
               renderer: ({ value }: { value: unknown }) => {
