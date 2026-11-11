@@ -202,10 +202,14 @@ body {
   overflow: hidden;
 }
 
+.zilla-gantt .b-icon-tree-leaf {
+  display: none;
+}
+
 .toast-stack {
   position: fixed;
-  bottom: 16px;
-  left: 16px;
+  top: 84px;
+  right: 16px;
   z-index: 40;
   display: flex;
   width: min(20rem, calc(100vw - 32px));

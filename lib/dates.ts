@@ -51,8 +51,27 @@ const SHORT_DATE = new Intl.DateTimeFormat("en-US", {
 });
 
 export function formatShortDate(isoDate: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
-  if (!match) return isoDate;
-  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  const date = utcDate(isoDate);
+  if (!date) return isoDate;
   return SHORT_DATE.format(date);
+}
+
+const MONTH_DAY = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+
+export function formatGanttDate(isoDate: string, planStartYear: number): string {
+  const date = utcDate(isoDate);
+  if (!date) return isoDate;
+  const monthDay = MONTH_DAY.format(date);
+  if (date.getUTCFullYear() === planStartYear) return monthDay;
+  return `${monthDay} '${String(date.getUTCFullYear()).slice(2)}`;
+}
+
+function utcDate(isoDate: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  if (!match) return null;
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
 }

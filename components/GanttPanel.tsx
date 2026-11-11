@@ -5,7 +5,7 @@ import "@bryntum/core-community/fontawesome/css/fontawesome.css";
 import "@bryntum/core-community/fontawesome/css/solid.css";
 import "@bryntum/gantt-community/gantt.css";
 import "@bryntum/gantt-community/stockholm-dark.css";
-import { addDays, daysBetween, formatShortDate } from "@/lib/dates";
+import { addDays, daysBetween, formatGanttDate, formatShortDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { paymentProgress, STATUS_LABEL } from "@/lib/status";
 import { timelineHeader, timelineTickSize } from "@/lib/timeline";
@@ -17,7 +17,7 @@ interface GanttLike {
   setTimeSpan?: (start: Date, end: Date) => void;
   tickSize?: number;
   viewPreset?: unknown;
-  columns?: { getAt: (index: number) => { width: number } | undefined };
+  columns?: { getAt: (index: number) => { width: number; minWidth?: number } | undefined };
   subGrids?: { locked?: { width: number } };
   _zillaHeader?: string;
 }
@@ -50,15 +50,26 @@ function columnLayout(width: number): {
   locked: number;
 } {
   if (width >= 1400) {
-    return { name: 188, date: 132, amount: 120, payment: 112, gate: 72, locked: 188 + 132 + 132 + 120 + 112 + 72 };
+    return { name: 210, date: 110, amount: 120, payment: 112, gate: 72, locked: 210 + 110 + 110 + 120 + 112 + 72 };
   }
   if (width >= 1000) {
-    return { name: 160, date: 124, amount: 112, payment: 104, gate: 68, locked: 160 + 124 + 124 + 112 + 104 + 68 };
+    return { name: 210, date: 110, amount: 112, payment: 104, gate: 68, locked: 210 + 110 + 110 + 112 + 104 + 68 };
   }
-  return { name: 140, date: 124, amount: 104, payment: 96, gate: 64, locked: 140 + 124 + 124 + 104 + 96 + 64 };
+  return { name: 168, date: 110, amount: 104, payment: 96, gate: 64, locked: 168 + 110 + 110 + 104 + 96 + 64 };
+}
+
+function planStartYear(phases: Phase[]): number {
+  const first = phases.map((phase) => phase.startDate).sort()[0];
+  const year = Number(first?.slice(0, 4));
+  return Number.isFinite(year) ? year : 1970;
+}
+
+function dateFields(isoDate: string, startYear: number): { label: string; full: string } {
+  return { label: formatGanttDate(isoDate, startYear), full: formatShortDate(isoDate) };
 }
 
 function chartData(phases: Phase[]) {
+  const startYear = planStartYear(phases);
   const gates = phases.flatMap((phase) =>
     phases
       .filter((successor) => successor.dependencies.includes(phase.id))
@@ -95,8 +106,10 @@ function chartData(phases: Phase[]) {
       blocked: phase.blocked,
       isGate: false,
       gateState: phase.blocked ? "locked" : "open",
-      zillaStart: formatShortDate(phase.startDate),
-      zillaEnd: formatShortDate(phase.endDate),
+      zillaStart: dateFields(phase.startDate, startYear).label,
+      zillaEnd: dateFields(phase.endDate, startYear).label,
+      zillaStartFull: dateFields(phase.startDate, startYear).full,
+      zillaEndFull: dateFields(phase.endDate, startYear).full,
       cls: `zilla-bar zilla-${phase.paymentStatus}${phase.blocked ? " zilla-locked" : ""}`,
     };
     const diamonds = (gateAfter.get(phase.id) ?? []).map((gate) => ({
@@ -115,8 +128,10 @@ function chartData(phases: Phase[]) {
       blocked: !gate.open,
       isGate: true,
       gateState: gate.open ? "gate-open" : "gate-locked",
-      zillaStart: formatShortDate(gate.startDate),
-      zillaEnd: formatShortDate(gate.startDate),
+      zillaStart: dateFields(gate.startDate, startYear).label,
+      zillaEnd: dateFields(gate.startDate, startYear).label,
+      zillaStartFull: dateFields(gate.startDate, startYear).full,
+      zillaEndFull: dateFields(gate.startDate, startYear).full,
       cls: `zilla-gate ${gate.open ? "zilla-gate-open" : "zilla-gate-locked"}`,
     }));
     return [phaseTask, ...diamonds];
@@ -151,6 +166,16 @@ function chartData(phases: Phase[]) {
   };
 }
 
+function dateCell(
+  record: { get: (field: string) => unknown },
+  labelField: string,
+  fullField: string,
+): string {
+  const label = String(record.get(labelField) || "");
+  const full = String(record.get(fullField) || label);
+  return `<span title="${encode(full)}">${encode(label)}</span>`;
+}
+
 function addClass(target: unknown, className: string) {
   if (!target) return;
   if (typeof (target as { add?: (value: string) => void }).add === "function") {
@@ -164,7 +189,10 @@ function frame(chart: GanttLike, phases: Phase[], host: HTMLElement) {
   const widths = [layout.name, layout.date, layout.date, layout.amount, layout.payment, layout.gate];
   widths.forEach((width, index) => {
     const column = chart.columns?.getAt(index);
-    if (column) column.width = width;
+    if (column) {
+      column.width = width;
+      column.minWidth = width;
+    }
   });
   if (chart.subGrids?.locked) chart.subGrids.locked.width = layout.locked;
   const start = phases.map((phase) => phase.startDate).sort()[0];
@@ -234,6 +262,8 @@ export function GanttPanel({
               { name: "phaseId", type: "string" },
               { name: "zillaStart", type: "string" },
               { name: "zillaEnd", type: "string" },
+              { name: "zillaStartFull", type: "string" },
+              { name: "zillaEndFull", type: "string" },
               { name: "blocked", type: "boolean" },
               { name: "isGate", type: "boolean" },
               { name: "gateState", type: "string" },
@@ -257,9 +287,23 @@ export function GanttPanel({
             daysPerMonth: 30,
           },
           columns: [
-            { type: "name", text: "Milestone", width: layout.name },
-            { field: "zillaStart", text: "Start", width: layout.date },
-            { field: "zillaEnd", text: "Finish", width: layout.date },
+            { type: "name", text: "Milestone", width: layout.name, minWidth: layout.name },
+            {
+              field: "zillaStart",
+              text: "Start",
+              width: layout.date,
+              minWidth: layout.date,
+              htmlEncode: false,
+              renderer: ({ record }: { record: { get: (field: string) => unknown } }) => dateCell(record, "zillaStart", "zillaStartFull"),
+            },
+            {
+              field: "zillaEnd",
+              text: "Finish",
+              width: layout.date,
+              minWidth: layout.date,
+              htmlEncode: false,
+              renderer: ({ record }: { record: { get: (field: string) => unknown } }) => dateCell(record, "zillaEnd", "zillaEndFull"),
+            },
             {
               field: "amount",
               text: "Amount",

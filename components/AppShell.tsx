@@ -181,17 +181,21 @@ export function AppShell() {
 
   useEffect(() => {
     const node = actionsRef.current;
-    if (!node) return;
+    if (!node || !actionsOpen) return;
     const scroll = () => {
       node.scrollTop = node.scrollHeight;
     };
     scroll();
     const frame = window.requestAnimationFrame(scroll);
-    return () => window.cancelAnimationFrame(frame);
+    const timer = window.setTimeout(scroll, 80);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
   }, [actionCount, projectId, actionsOpen]);
 
   useEffect(() => {
-    if (pendingDrafts.length > 0) setActionsOpen(false);
+    setActionsOpen(pendingDrafts.length === 0);
   }, [pendingDrafts.length]);
 
   async function run(task: () => Promise<ApiPayload>) {

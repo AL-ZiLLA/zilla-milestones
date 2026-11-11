@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatShortDate } from "@/lib/dates";
+import { formatGanttDate, formatShortDate } from "@/lib/dates";
 import { timelineHeader, timelineTickSize } from "@/lib/timeline";
 
 describe("gantt timeline labels", () => {
@@ -19,5 +19,8 @@ describe("gantt timeline labels", () => {
 
   it("formats start and finish as a short date", () => {
     expect(formatShortDate("2027-02-17")).toBe("Feb 17, 2027");
+    expect(formatGanttDate("2026-11-10", 2026)).toBe("Nov 10");
+    expect(formatGanttDate("2027-03-22", 2026)).toBe("Mar 22 '27");
+    expect(formatShortDate("2027-03-22")).toBe("Mar 22, 2027");
   });
 });
