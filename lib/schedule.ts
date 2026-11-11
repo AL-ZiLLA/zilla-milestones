@@ -34,6 +34,36 @@ export function dependentIds(phases: Phase[], rootId: string): Set<string> {
   return result;
 }
 
+export function overdueGateShiftDays(phases: Phase[], phase: Phase): number {
+  if (phase.paymentStatus === "paid" || phase.paymentStatus === "cancelled") return 0;
+  const byId = new Map(phases.map((item) => [item.id, item]));
+  let total = 0;
+  const seen = new Set<string>();
+  const stack = [...phase.dependencies];
+  while (stack.length > 0) {
+    const id = stack.pop();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const ancestor = byId.get(id);
+    if (!ancestor) continue;
+    total += ancestor.slipDaysApplied;
+    stack.push(...ancestor.dependencies);
+  }
+  return total;
+}
+
+export function phaseBaseline(
+  phases: Phase[],
+  phase: Phase,
+): { baselineStart: string; baselineFinish: string; overdueShiftDays: number } {
+  const overdueShiftDays = overdueGateShiftDays(phases, phase);
+  return {
+    baselineStart: addDays(phase.startDate, -overdueShiftDays),
+    baselineFinish: addDays(phase.endDate, -overdueShiftDays),
+    overdueShiftDays,
+  };
+}
+
 function topoOrder(phases: Phase[]): string[] {
   const indegree = new Map(phases.map((phase) => [phase.id, phase.dependencies.length]));
   const outgoing = new Map<string, string[]>();
