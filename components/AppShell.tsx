@@ -263,12 +263,9 @@ export function AppShell() {
           />
           <div className="min-w-0">
             <p className="font-display text-lg font-semibold leading-tight tracking-tight text-white sm:text-xl md:text-2xl">
-              Zilla Milestones
+              Zilla OS <span className="text-zinc-500">/</span> Milestones module
             </p>
-            <p className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm leading-tight">
-              <span className="text-[11px] font-medium text-zinc-400 sm:text-xs">by Zilla Labs</span>
-              <span className="text-lime">Get paid before the next phase starts</span>
-            </p>
+            <p className="text-sm text-lime">Get paid before the next phase starts</p>
           </div>
         </div>
         <div className="toast-stack" data-testid="toast-stack" aria-live="polite">

@@ -264,11 +264,10 @@ describe("canonical copy", () => {
     expect(layout).toContain("prefers-color-scheme: dark");
     const shell = readFileSync("components/AppShell.tsx", "utf8");
     expect(shell).toContain('src="/icon.svg"');
-    expect(shell).toContain("Zilla Milestones");
-    expect(shell).toContain("by Zilla Labs");
+    expect(shell).toContain('Zilla OS <span className="text-zinc-500">/</span> Milestones module');
+    expect(shell).not.toContain("by Zilla Labs");
     expect(shell).toContain('src="/powered-by-zilla-ai.svg"');
     expect(shell).toContain("Powered by Zilla AI");
-    expect(shell).not.toContain("Milestones module");
     const card = readFileSync("app/opengraph-image.tsx", "utf8");
     expect(card).toContain("public/icons/icon-512.png");
     expect(card).not.toContain(">Z<");
