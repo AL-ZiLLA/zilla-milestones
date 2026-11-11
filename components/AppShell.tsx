@@ -253,12 +253,12 @@ export function AppShell() {
   return (
     <main className="zilla-app mx-auto flex min-h-dvh flex-col px-3 py-3 md:px-4 lg:h-dvh lg:overflow-hidden">
       <header className="zilla-header mb-3 grid shrink-0 items-center gap-3 md:grid-cols-[auto_minmax(0,1fr)_auto]">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-lime text-ink">
             <span className="font-display text-2xl font-bold">Z</span>
           </div>
-          <div>
-            <p className="font-display text-xl font-semibold tracking-tight text-white md:text-2xl">
+          <div className="min-w-0">
+            <p className="font-display text-lg font-semibold leading-tight tracking-tight text-white sm:text-xl md:text-2xl">
               Zilla OS <span className="text-zinc-500">/</span> Milestones module
             </p>
             <p className="text-sm text-lime">Get paid before the next phase starts</p>
@@ -391,8 +391,8 @@ export function AppShell() {
           </form>
         </section>
       ) : (
-        <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_300px] min-[1440px]:grid-cols-[minmax(0,1fr)_340px] min-[1700px]:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="plan-column flex min-h-0 flex-col gap-3 overflow-auto lg:overflow-hidden">
+        <section className="grid min-h-0 min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_300px] min-[1440px]:grid-cols-[minmax(0,1fr)_340px] min-[1700px]:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="plan-column flex min-h-0 min-w-0 flex-col gap-3 overflow-auto lg:overflow-hidden">
             <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <h1 className="font-display text-xl text-white md:text-2xl" data-testid="plan-title">{project.name}</h1>
@@ -408,7 +408,7 @@ export function AppShell() {
             </div>
 
             {money ? (
-              <div className="grid shrink-0 grid-cols-4 gap-2" data-testid="money-bar">
+              <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4" data-testid="money-bar">
                 <MoneyCell label="Contract" value={formatMoney(money.contract)} />
                 <MoneyCell label="Paid" value={formatMoney(money.paid)} tone="paid" />
                 <MoneyCell label="Invoiced" value={formatMoney(money.invoiced)} tone="invoiced" />
@@ -432,11 +432,12 @@ export function AppShell() {
               ))}
             </div>
 
-            <div className="gantt-block flex min-h-[360px] flex-1 flex-col lg:min-h-0">
+            <div className="gantt-block flex min-h-[280px] min-w-0 flex-1 flex-col lg:min-h-0">
               <p className="gantt-caption mb-1 text-[11px] uppercase tracking-[0.16em] text-lime">
-                Bryntum Gantt · payment gates are diamonds · padlock means locked until paid
+                <span className="sm:hidden">Gates are diamonds · padlock means unpaid</span>
+                <span className="hidden sm:inline">Bryntum Gantt · payment gates are diamonds · padlock means locked until paid</span>
               </p>
-              <div className="h-[420px] w-full lg:h-auto lg:min-h-0 lg:flex-1">
+              <div className="h-[300px] w-full min-w-0 sm:h-[420px] lg:h-auto lg:min-h-0 lg:flex-1">
                 <GanttPanel key={project.id} phases={project.phases} onSelect={setSelectedId} />
               </div>
             </div>
@@ -459,7 +460,7 @@ export function AppShell() {
             ) : null}
           </div>
 
-          <aside className="panel flex min-h-[520px] flex-col overflow-hidden rounded-3xl lg:min-h-0">
+          <aside className="panel flex min-h-[420px] min-w-0 flex-col overflow-hidden rounded-3xl sm:min-h-[520px] lg:min-h-0">
             {pendingDrafts.map((draft) => (
               <article key={draft.id} className="shrink-0 border-b border-line px-4 py-3" data-testid="approval-card">
                 <p className="text-xs uppercase tracking-[0.16em] text-lime">Approval required</p>
@@ -611,7 +612,7 @@ function MoneyCell({ label, value, tone }: { label: string; value: string; tone?
   return (
     <div className="money-card">
       <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">{label}</p>
-      <p className={`font-display text-xl ${color}`}>{value}</p>
+      <p className={`font-display text-base leading-tight sm:text-xl ${color}`}>{value}</p>
     </div>
   );
 }

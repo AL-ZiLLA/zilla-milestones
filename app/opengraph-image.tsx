@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Zilla OS / Milestones — Get paid before the next phase starts";
+export const alt = "Zilla Milestones — Get paid before the next phase starts";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -41,6 +41,7 @@ export default function OpenGraphImage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <div style={{ fontSize: 72, fontWeight: 700, lineHeight: 1.02 }}>Milestones</div>
           <div style={{ fontSize: 36, color: "#d5dee6" }}>Get paid before the next phase starts</div>
+          <div style={{ fontSize: 24, letterSpacing: 0.4, color: "#d6f26a" }}>milestones.zillalabs.ai</div>
         </div>
       </div>
     ),

@@ -4,7 +4,7 @@ Get paid before the next phase starts.
 
 Zilla Milestones is a module of Zilla OS, an operating system for running a company. Paste a scope, a client billing email, and a budget. Grok breaks the work into priced phases. A Bryntum Gantt chart treats every phase as a payment gate. PayPal invoices collect the money, and the next phase stays locked until the invoice is paid. If a payment goes past its Net-7 due date, the agent moves the downstream work and drafts a client update. A person approves before any reminder goes out.
 
-Demo: _(hosted URL goes here after deploy)_
+Demo: https://milestones.zillalabs.ai
 
 Video: _(YouTube link goes here after recording)_
 
@@ -119,11 +119,11 @@ Community does not include the Business/Enterprise features (full task editor, b
 | `SUPABASE_URL` | for hosted sessions | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | for hosted sessions | Server-only service role key. Never expose it to the browser |
 | `ZILLA_STORE_PATH` | no | JSON file path when Supabase is not set |
-| `NEXT_PUBLIC_SITE_URL` | no | Public origin for Open Graph URLs. Defaults to `http://localhost:3000` |
+| `NEXT_PUBLIC_SITE_URL` | no | Public origin for canonical and Open Graph URLs. Defaults to `https://milestones.zillalabs.ai` |
 
 Never commit `.env.local` or a service role key. Only `.env.example` is in git.
 
-Apply `supabase/migrations/20261111000000_zilla_sessions.sql` before pointing the app at Supabase. Subscribe the PayPal app to `INVOICING.INVOICE.PAID`, `INVOICING.INVOICE.CANCELLED`, and `INVOICING.INVOICE.REFUNDED`, and set the listener to `https://<public-host>/api/paypal/webhook`.
+Apply `supabase/migrations/20261111000000_zilla_sessions.sql` before pointing the app at Supabase. Subscribe the PayPal app to `INVOICING.INVOICE.PAID`, `INVOICING.INVOICE.CANCELLED`, and `INVOICING.INVOICE.REFUNDED`, and set the listener to `https://milestones.zillalabs.ai/api/paypal/webhook`.
 
 ## Run
 
@@ -159,9 +159,15 @@ curl -s -X POST http://localhost:3000/api/paypal/webhook \
 
 Replace the id with the invoice id on the phase. The open page picks it up on its own. An unsigned POST returns 401.
 
+## Install
+
+The canonical app is [https://milestones.zillalabs.ai](https://milestones.zillalabs.ai). Chrome, Edge, and other Chromium browsers can install it as a standalone app. The service worker caches the static shell (icons, hashed `/_next/static` files) so repeat visits open quickly, and it serves `offline.html` when a navigation cannot reach the network. Requests to `/api/*`, including chat and `POST /api/paypal/webhook`, are network-only and are never written to the cache. `NEXT_PUBLIC_SITE_URL` still overrides the public origin when it is set. The env var name is unchanged.
+
 ## Layout
 
-- `app/` — App Router UI, favicon, Open Graph image, and route handlers
+- `app/` — App Router UI, web app manifest, Open Graph image, and route handlers
+- `public/icons/` — 192, 512, maskable 512, and apple-touch-icon, plus `favicon.ico` and `icon.svg`
+- `public/sw.js` — app-shell cache. `/api/*` stays on the network
 - `components/GanttPanel.tsx` — Bryntum Gantt Community mount
 - `lib/invoice-payload.ts` — merchant invoice date and Net-7 body
 - `lib/store.ts` — file store and Supabase store
