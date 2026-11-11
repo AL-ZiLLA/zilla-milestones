@@ -23,6 +23,8 @@ export interface Phase {
   paypalPayerUrl?: string;
   invoiceDate?: string;
   slipDaysApplied: number;
+  /** Calendar days overdue payment gates have pushed this phase. Kept after the phase is paid. */
+  overdueShiftDays?: number;
   blocked: boolean;
   paidAt?: string;
   invoicedAt?: string;

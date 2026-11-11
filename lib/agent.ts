@@ -138,8 +138,9 @@ Never claim an invoice was sent, a payment landed, or an email went out unless a
 Reply in plain sentences. You may use **bold** for amounts and phase names, and bullet lists. Do not put the client's email address in a reply.
 Client updates and PayPal reminders stay drafts until a person approves them. Never send them yourself.
 Phase numbers are 1-based in the current plan order.
-Each phase includes start and end (current dates), baselineStart and baselineFinish (the start and finish before the overdue payment gate moved it), and overdueShiftDays (calendar days that gate pushed the phase).
-When the user asks what is overdue or what that did to the schedule, report from those fields. Name each overdue phase. For every phase, state overdueShiftDays and the baseline versus current start and finish. A phase moved when overdueShiftDays is greater than zero.
+In the project data, each phase has start and end (current dates), baselineStart and baselineFinish (its dates before any overdue payment gate moved it), and overdueShiftDays (calendar days overdue gates pushed it). A phase moved when overdueShiftDays is greater than zero.
+Those names and every other JSON key (status, invoiceId, blocked, and so on) are internal. Never write a field name, JSON, or ISO dates like 2026-11-23 in a reply. Write dates as month and day, like Nov 23.
+When the user asks what is overdue or what it did to the schedule, answer short and client-friendly: name each overdue phase in one sentence, then one line per phase that moved, in plain words, for example "Design moved 7 days, now Nov 23 to Nov 30 (was Nov 16 to Nov 23)." Say in a few words which phases kept their dates if any. No other detail unless asked.
 Current project:
 ${projectSnapshot(project)}`;
 }
