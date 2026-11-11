@@ -254,14 +254,21 @@ export function AppShell() {
     <main className="zilla-app mx-auto flex min-h-dvh flex-col px-3 py-3 md:px-4 lg:h-dvh lg:overflow-hidden">
       <header className="zilla-header mb-3 grid shrink-0 items-center gap-3 md:grid-cols-[auto_minmax(0,1fr)_auto]">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-lime text-ink">
-            <span className="font-display text-2xl font-bold">Z</span>
-          </div>
+          <ExactImage
+            src="/icon.svg"
+            alt="Zilla AI"
+            width={1498}
+            height={1492}
+            className="h-16 w-auto shrink-0 sm:h-[72px]"
+          />
           <div className="min-w-0">
             <p className="font-display text-lg font-semibold leading-tight tracking-tight text-white sm:text-xl md:text-2xl">
-              Zilla OS <span className="text-zinc-500">/</span> Milestones module
+              Zilla Milestones
             </p>
-            <p className="text-sm text-lime">Get paid before the next phase starts</p>
+            <p className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm leading-tight">
+              <span className="text-[11px] font-medium text-zinc-400 sm:text-xs">by Zilla Labs</span>
+              <span className="text-lime">Get paid before the next phase starts</span>
+            </p>
           </div>
         </div>
         <div className="toast-stack" data-testid="toast-stack" aria-live="polite">
@@ -602,7 +609,36 @@ export function AppShell() {
           </div>
         </div>
       ) : null}
+      <footer className="mt-auto flex shrink-0 justify-start pt-2">
+        <ExactImage
+          src="/powered-by-zilla-ai.svg"
+          alt="Powered by Zilla AI"
+          width={5825}
+          height={1492}
+          className="h-10 w-auto"
+        />
+      </footer>
     </main>
+  );
+}
+
+function ExactImage({
+  src,
+  alt,
+  width,
+  height,
+  className,
+}: {
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+  className: string;
+}) {
+  return (
+    // The official SVG is served as-is. The image optimizer must not redraw it.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt={alt} width={width} height={height} className={className} />
   );
 }
 

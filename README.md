@@ -166,7 +166,8 @@ The canonical app is [https://milestones.zillalabs.ai](https://milestones.zillal
 ## Layout
 
 - `app/` — App Router UI, web app manifest, Open Graph image, and route handlers
-- `public/icons/` — 192, 512, maskable 512, and apple-touch-icon, plus `favicon.ico` and `icon.svg`
+- `brand/` — exact Zilla AI mark. White bars on dark surfaces, `#111111` bars on light surfaces
+- `public/icons/` — 192 and 512 from the dark mark, maskable 512 (light mark padded on white), apple-touch-icon, plus `favicon.ico`, `favicon-32.png`, and `icon.svg`
 - `public/sw.js` — app-shell cache. `/api/*` stays on the network
 - `components/GanttPanel.tsx` — Bryntum Gantt Community mount
 - `lib/invoice-payload.ts` — merchant invoice date and Net-7 body

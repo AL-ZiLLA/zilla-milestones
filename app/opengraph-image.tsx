@@ -1,10 +1,14 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
 export const alt = "Zilla Milestones — Get paid before the next phase starts";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-export default function OpenGraphImage() {
+export default async function OpenGraphImage() {
+  const logo = await readFile(join(process.cwd(), "public/icons/icon-512.png"));
+  const logoSrc = `data:image/png;base64,${logo.toString("base64")}`;
   return new ImageResponse(
     (
       <div
@@ -19,23 +23,8 @@ export default function OpenGraphImage() {
           padding: "72px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <div
-            style={{
-              width: 72,
-              height: 72,
-              borderRadius: 18,
-              background: "#d6f26a",
-              color: "#07110e",
-              fontSize: 44,
-              fontWeight: 700,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            Z
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
+          <img src={logoSrc} width={148} height={148} alt="" />
           <div style={{ display: "flex", fontSize: 28, letterSpacing: 4, color: "#d6f26a" }}>ZILLA OS</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
