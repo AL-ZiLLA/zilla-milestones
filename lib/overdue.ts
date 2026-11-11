@@ -1,6 +1,6 @@
 import { addDays, daysBetween } from "@/lib/dates";
 import { buildOverdueDraft, upsertPendingDraft } from "@/lib/email";
-import { dependentIds, recomputeBlocks } from "@/lib/schedule";
+import { dependentIds, overdueGateShiftDays, recomputeBlocks } from "@/lib/schedule";
 import type { Phase, Project } from "@/lib/types";
 
 function withOverdueShift(phases: Phase[], rootId: string, slip: number, delta: number): Phase[] {
@@ -14,7 +14,10 @@ function withOverdueShift(phases: Phase[], rootId: string, slip: number, delta: 
     const startDate = addDays(phase.startDate, delta);
     const endDate = addDays(phase.endDate, delta);
     const dueDate = phase.paymentStatus === "draft" ? endDate : phase.dueDate;
-    return { ...phase, startDate, endDate, dueDate };
+    // Record the shift on the phase so it survives a later payment. Phases saved
+    // before this field existed fall back to the ancestor-gate sum once.
+    const priorShift = phase.overdueShiftDays ?? overdueGateShiftDays(phases, phase);
+    return { ...phase, startDate, endDate, dueDate, overdueShiftDays: priorShift + delta };
   });
 }
 

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chatWithProject, runAgentTool } from "@/lib/agent";
 import { grokComplete } from "@/lib/planner";
 import { fastForwardClock, projectSnapshot } from "@/lib/service";
+import { applyOverdue } from "@/lib/overdue";
+import { markPhaseStatus } from "@/lib/schedule";
 import type { Phase, Project } from "@/lib/types";
 
 vi.mock("@/lib/planner", () => ({
@@ -183,9 +185,9 @@ describe("chat project state after an overdue gate", () => {
 
     vi.mocked(grokComplete).mockImplementation(async (messages) => {
       const system = String(messages[0]?.content ?? "");
-      expect(system).toContain(
-        "When the user asks what is overdue or what that did to the schedule, report from those fields.",
-      );
+      expect(system).toContain("Never write a field name, JSON, or ISO dates");
+      expect(system).toContain('"Design moved 7 days, now Nov 23 to Nov 30 (was Nov 16 to Nov 23)."');
+      expect(system).not.toContain("state overdueShiftDays");
       const snapshot = parseSnapshot(system);
       expect(phaseByName(snapshot, "Discovery").status).toBe("overdue");
       expect(phaseByName(snapshot, "Build")).toMatchObject({
@@ -222,5 +224,63 @@ describe("chat project state after an overdue gate", () => {
       if (previousKey === undefined) delete process.env.XAI_API_KEY;
       else process.env.XAI_API_KEY = previousKey;
     }
+  });
+
+  it("keeps a moved phase's shift after it is paid, without double counting", async () => {
+    const forwarded = await fastForwardClock(invoicedPlan(), "Discovery");
+    const design = forwarded.project.phases.find((item) => item.name === "Design");
+    expect(design?.overdueShiftDays).toBe(7);
+    const paidDesign = { ...forwarded.project, phases: markPhaseStatus(forwarded.project.phases, design!.id, "paid") };
+    const snapshot = parseSnapshot(projectSnapshot(paidDesign));
+    expect(phaseByName(snapshot, "Design")).toMatchObject({
+      status: "paid",
+      overdueShiftDays: 7,
+      baselineStart: "2026-11-06",
+      start: "2026-11-13",
+      baselineFinish: "2026-11-13",
+      end: "2026-11-20",
+    });
+    expect(phaseByName(snapshot, "Build")).toMatchObject({ overdueShiftDays: 7, baselineStart: "2026-11-14" });
+    expect(phaseByName(snapshot, "Launch")).toMatchObject({ overdueShiftDays: 7, baselineStart: "2026-11-26" });
+    expect(phaseByName(snapshot, "Support")).toMatchObject({ overdueShiftDays: 0, start: "2026-11-06" });
+  });
+
+  it("sums two gates once each across a diamond and leaves paid and unrelated phases alone", () => {
+    const base = invoicedPlan();
+    const phases: Phase[] = [
+      phase({ id: "a", name: "A", paymentStatus: "invoiced", paypalInvoiceId: "INV2-A", startDate: "2026-11-01", endDate: "2026-11-03", dueDate: "2026-11-03" }),
+      phase({ id: "b", name: "B", dependencies: ["a"], paymentStatus: "invoiced", paypalInvoiceId: "INV2-B", startDate: "2026-11-04", endDate: "2026-11-06", dueDate: "2026-11-06" }),
+      phase({ id: "c", name: "C", dependencies: ["a"], startDate: "2026-11-04", endDate: "2026-11-06", dueDate: "2026-11-06" }),
+      phase({ id: "d", name: "D", dependencies: ["b", "c"], startDate: "2026-11-07", endDate: "2026-11-09", dueDate: "2026-11-09" }),
+      phase({ id: "e", name: "E", dependencies: ["a"], paymentStatus: "paid", startDate: "2026-11-04", endDate: "2026-11-05", dueDate: "2026-11-05" }),
+      phase({ id: "f", name: "F", startDate: "2026-11-01", endDate: "2026-11-02", dueDate: "2026-11-02" }),
+    ];
+    const original = new Map(phases.map((item) => [item.name, item.startDate]));
+    const after = applyOverdue({ ...base, phases }, "2026-11-10", () => "draft_x").project;
+    const snapshot = parseSnapshot(projectSnapshot(after));
+    for (const item of snapshot.phases) {
+      expect(item.baselineStart).toBe(original.get(item.name));
+    }
+    // A slips 7 days and moves B, C, D. B, moved to Nov 11, is past its Nov 6 due date by 4 days and moves D again.
+    expect(phaseByName(snapshot, "B").overdueShiftDays).toBe(7);
+    expect(phaseByName(snapshot, "C").overdueShiftDays).toBe(7);
+    expect(phaseByName(snapshot, "D").overdueShiftDays).toBe(11);
+    expect(phaseByName(snapshot, "E").overdueShiftDays).toBe(0);
+    expect(phaseByName(snapshot, "F").overdueShiftDays).toBe(0);
+  });
+
+  it("falls back to the gate sum for phases saved before the shift was recorded", async () => {
+    const forwarded = await fastForwardClock(invoicedPlan(), "Discovery");
+    const legacy = {
+      ...forwarded.project,
+      phases: forwarded.project.phases.map((item) => {
+        const copy = { ...item };
+        delete copy.overdueShiftDays;
+        return copy;
+      }),
+    };
+    const snapshot = parseSnapshot(projectSnapshot(legacy));
+    expect(phaseByName(snapshot, "Build")).toMatchObject({ overdueShiftDays: 7, baselineStart: "2026-11-14" });
+    expect(phaseByName(snapshot, "Support").overdueShiftDays).toBe(0);
   });
 });

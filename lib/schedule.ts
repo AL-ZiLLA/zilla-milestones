@@ -56,7 +56,8 @@ export function phaseBaseline(
   phases: Phase[],
   phase: Phase,
 ): { baselineStart: string; baselineFinish: string; overdueShiftDays: number } {
-  const overdueShiftDays = overdueGateShiftDays(phases, phase);
+  // Recorded shift first (survives a later payment); legacy phases use the gate sum.
+  const overdueShiftDays = phase.overdueShiftDays ?? overdueGateShiftDays(phases, phase);
   return {
     baselineStart: addDays(phase.startDate, -overdueShiftDays),
     baselineFinish: addDays(phase.endDate, -overdueShiftDays),
