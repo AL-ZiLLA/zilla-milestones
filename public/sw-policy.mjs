@@ -21,7 +21,13 @@ export function cacheDecision(input) {
   if (path === "/api" || path.startsWith("/api/")) return "network-only";
   if (path === "/sw.js" || path === "/sw-policy.mjs") return "network-only";
   if (input.mode === "navigate" || path === "/offline.html") return "network-first-document";
-  if (STATIC_PREFIXES.some((prefix) => path.startsWith(prefix)) || path === "/favicon.ico" || path === "/icon.svg") {
+  if (
+    STATIC_PREFIXES.some((prefix) => path.startsWith(prefix)) ||
+    path === "/favicon.ico" ||
+    path === "/favicon-32.png" ||
+    path === "/icon.svg" ||
+    path === "/powered-by-zilla-ai.svg"
+  ) {
     return "cache-first";
   }
   return "network-only";

@@ -1,10 +1,12 @@
 import { cacheDecision } from "./sw-policy.mjs";
 
-const CACHE = "zilla-milestones-v2";
+const CACHE = "zilla-milestones-v3";
 const PRECACHE = [
   "/offline.html",
   "/favicon.ico",
+  "/favicon-32.png",
   "/icon.svg",
+  "/powered-by-zilla-ai.svg",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/icon-maskable-512.png",
