@@ -1,9 +1,14 @@
 import { randomBytes } from "crypto";
-import { addDays, todayUtc } from "@/lib/dates";
+import { appendAction } from "@/lib/actions";
+import { composeOverdueDrafts } from "@/lib/compose";
+import { addDays, asOfDate, merchantToday } from "@/lib/dates";
+import { reminderNote } from "@/lib/email";
 import { ActionError } from "@/lib/errors";
+import { buildInvoiceRequest, findPayerUrl, payerViewUrl } from "@/lib/invoice-payload";
 import { formatMoney } from "@/lib/money";
 import { applyOverdue } from "@/lib/overdue";
 import {
+  applyInvoiceDueDate,
   callPaypalTool,
   findInvoiceId,
   mapPaypalInvoiceStatus,
@@ -17,8 +22,6 @@ import {
   recomputeBlocks,
   shiftPhaseAndDependents,
 } from "@/lib/schedule";
-import { PYUSD_NOTE } from "@/lib/status";
-import { saveProject } from "@/lib/store";
 import { mockPaypalEnabled } from "@/lib/mode";
 import type { PaymentStatus, Phase, Project } from "@/lib/types";
 
@@ -39,6 +42,33 @@ function requirePhase(project: Project, phaseRef: string): Phase {
   return phase;
 }
 
+async function traced<T>(
+  project: Project,
+  tool: string,
+  detail: string | undefined,
+  task: () => Promise<T>,
+): Promise<{ project: Project; value: T }> {
+  const started = Date.now();
+  try {
+    const value = await task();
+    return {
+      value,
+      project: appendAction(project, { tool, status: "ok", latencyMs: Date.now() - started, detail }),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const next = appendAction(project, {
+      tool,
+      status: "error",
+      latencyMs: Date.now() - started,
+      detail: message,
+    });
+    const wrapped = new ActionError(message);
+    (wrapped as ActionError & { project?: Project }).project = next;
+    throw wrapped;
+  }
+}
+
 export async function createProject(input: {
   scope: string;
   clientEmail: string;
@@ -47,12 +77,12 @@ export async function createProject(input: {
 }): Promise<Project> {
   const plan = await generatePlan(input.scope);
   const phases = buildPhasesFromPlan(plan, {
-    startDate: todayUtc(),
+    startDate: merchantToday(),
     budget: input.budget,
     createId: () => nid("ph"),
   });
   const now = new Date().toISOString();
-  const project: Project = {
+  return {
     id: nid("proj"),
     name: plan.projectName,
     summary: plan.summary,
@@ -71,13 +101,16 @@ export async function createProject(input: {
         at: now,
       },
     ],
+    clockDate: null,
+    actions: [],
+    events: [],
   };
-  return saveProject(project) ?? project;
 }
 
 export async function invoicePhase(
   project: Project,
   phaseRef: string,
+  options?: { now?: Date },
 ): Promise<{ project: Project; message: string }> {
   const phase = requirePhase(project, phaseRef);
   if (phase.blocked) {
@@ -95,73 +128,79 @@ export async function invoicePhase(
     );
   }
 
-  const note = [
-    `Zilla Milestones · ${project.name}`,
-    phase.description,
-    project.pyusdNote ? PYUSD_NOTE : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const created = await callPaypalTool(
-    "create_invoice",
-    {
-      currency_code: "USD",
-      invoice_number: `ZILLA-${phase.id}`.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 25),
-      invoice_date: todayUtc(),
-      reference: phase.id,
-      note,
-      invoicer_business_name: process.env.PAYPAL_MERCHANT_NAME || "Zilla Labs",
-      ...(process.env.PAYPAL_MERCHANT_EMAIL
-        ? { invoicer_email_address: process.env.PAYPAL_MERCHANT_EMAIL }
-        : {}),
-      primary_recipients: [{ billing_info: { email_address: project.clientEmail } }],
-      items: [
-        {
-          name: phase.name,
-          description: phase.description,
-          quantity: "1",
-          unit_amount: { currency_code: "USD", value: phase.amount.toFixed(2) },
-        },
-      ],
-    },
-    project,
+  const built = buildInvoiceRequest(project, phase, options?.now ?? new Date());
+  let working = project;
+  const created = await traced(working, "create_invoice", phase.name, () =>
+    callPaypalTool("create_invoice", built.args, working),
   );
-  const invoiceId = findInvoiceId(created);
+  working = created.project;
+  const invoiceId = findInvoiceId(created.value);
   if (!invoiceId) {
     throw new ActionError("PayPal create_invoice did not return an invoice id.");
   }
 
+  const termed = await traced(working, "set_invoice_due_date", `Due ${built.dueDate}`, async () => {
+    const result = await applyInvoiceDueDate(invoiceId, built.paypalBody);
+    if (!result.ok) throw new Error(result.detail || "PayPal did not accept the Net 7 due date");
+    return result;
+  }).catch((error: unknown) => {
+    const withProject = error as ActionError & { project?: Project };
+    return { project: withProject.project ?? working, value: null as null };
+  });
+  working = termed.project;
+
   let sent = true;
   let sendError = "";
   try {
-    await callPaypalTool(
-      "send_invoice",
-      {
-        invoice_id: invoiceId,
-        send_to_recipient: true,
-        note: `Milestone invoice for ${phase.name} from Zilla Labs.`,
-      },
-      project,
+    const send = await traced(working, "send_invoice", invoiceId, () =>
+      callPaypalTool(
+        "send_invoice",
+        {
+          invoice_id: invoiceId,
+          send_to_recipient: true,
+          note: `Milestone invoice for ${phase.name} from Zilla Labs. Net 7, due ${built.dueDate}.`,
+        },
+        working,
+      ),
     );
+    working = send.project;
   } catch (error) {
     sent = false;
+    const withProject = error as ActionError & { project?: Project };
+    working = withProject.project ?? working;
     sendError = error instanceof Error ? error.message : String(error);
   }
 
-  const phases = project.phases.map((item) =>
+  let payerUrl = findPayerUrl(created.value) || payerViewUrl(invoiceId, process.env.PAYPAL_MODE === "live");
+  if (sent) {
+    try {
+      const remote = await traced(working, "get_invoice", invoiceId, () =>
+        callPaypalTool("get_invoice", { invoice_id: invoiceId }, working),
+      );
+      working = remote.project;
+      payerUrl = findPayerUrl(remote.value) || payerUrl;
+    } catch (error) {
+      const withProject = error as ActionError & { project?: Project };
+      working = withProject.project ?? working;
+    }
+  }
+
+  const phases = working.phases.map((item) =>
     item.id === phase.id
       ? {
           ...item,
           paypalInvoiceId: invoiceId,
+          paypalPayerUrl: payerUrl,
+          invoiceDate: sent ? built.invoiceDate : item.invoiceDate,
+          dueDate: sent ? built.dueDate : item.dueDate,
           paymentStatus: sent ? ("invoiced" as const) : item.paymentStatus,
           invoicedAt: sent ? new Date().toISOString() : item.invoicedAt,
         }
       : item,
   );
-  const next = touch({ ...project, phases: recomputeBlocks(phases) });
+  const next = touch({ ...working, phases: recomputeBlocks(phases) });
   const message = sent
-    ? `Sent PayPal invoice ${invoiceId} for ${phase.name} (${formatMoney(phase.amount)}) to ${project.clientEmail}.`
+    ? `Sent PayPal invoice ${invoiceId} for ${phase.name} (${formatMoney(phase.amount)}) to ${project.clientEmail}. Due ${built.dueDate} (Net 7).`
     : `Created PayPal invoice ${invoiceId} for ${phase.name}, but sending it failed: ${sendError}`;
   return { project: next, message };
 }
@@ -177,35 +216,35 @@ export async function simulatePayment(
   if (phase.paymentStatus === "paid") {
     throw new ActionError(`${phase.name} is already paid.`);
   }
-  const payload = await callPaypalTool(
-    "record_payment_for_invoice",
-    {
-      invoice_id: phase.paypalInvoiceId,
-      method: "OTHER",
-      payment_date: todayUtc(),
-      amount: { currency_code: "USD", value: phase.amount.toFixed(2) },
-      note: "Sandbox payment recorded from Zilla Milestones.",
-    },
-    project,
-  );
-  let confirmed =
-    paymentWasRecorded(payload) || mapPaypalInvoiceStatus(payload) === "paid";
-  // Toolkit may return a PayPal 200 body without success/status, or an error if the
-  // invoice was already marked paid. Re-read the invoice as the source of truth.
-  if (!confirmed) {
-    const remote = await callPaypalTool(
-      "get_invoice",
-      { invoice_id: phase.paypalInvoiceId },
+  const paymentDate = merchantToday();
+  const recorded = await traced(project, "record_payment_for_invoice", phase.paypalInvoiceId, () =>
+    callPaypalTool(
+      "record_payment_for_invoice",
+      {
+        invoice_id: phase.paypalInvoiceId,
+        method: "OTHER",
+        payment_date: paymentDate,
+        amount: { currency_code: "USD", value: phase.amount.toFixed(2) },
+        note: "Sandbox payment recorded from Zilla Milestones.",
+      },
       project,
+    ),
+  );
+  let working = recorded.project;
+  let confirmed = paymentWasRecorded(recorded.value) || mapPaypalInvoiceStatus(recorded.value) === "paid";
+  if (!confirmed) {
+    const remote = await traced(working, "get_invoice", phase.paypalInvoiceId, () =>
+      callPaypalTool("get_invoice", { invoice_id: phase.paypalInvoiceId }, working),
     );
-    confirmed = mapPaypalInvoiceStatus(remote) === "paid";
+    working = remote.project;
+    confirmed = mapPaypalInvoiceStatus(remote.value) === "paid";
   }
   if (!confirmed) {
     throw new ActionError("PayPal did not confirm the payment.");
   }
   const next = touch({
-    ...project,
-    phases: markPhaseStatus(project.phases, phase.id, "paid", todayUtc()),
+    ...working,
+    phases: markPhaseStatus(working.phases, phase.id, "paid", paymentDate),
   });
   return {
     project: next,
@@ -222,30 +261,36 @@ export async function syncProject(
     : project.phases.filter((phase) => phase.paypalInvoiceId);
   if (targets.length === 0) throw new ActionError("There are no PayPal invoices to sync yet.");
 
+  let working = project;
   let phases = project.phases;
   const lines: string[] = [];
+  const asOf = asOfDate(project);
   for (const target of targets) {
     if (!target.paypalInvoiceId) continue;
     const current = phases.find((phase) => phase.id === target.id) ?? target;
-    const payload = await callPaypalTool("get_invoice", { invoice_id: target.paypalInvoiceId }, {
-      ...project,
-      phases,
-    });
-    const remote = mapPaypalInvoiceStatus(payload);
+    const remoteCall = await traced(working, "get_invoice", target.paypalInvoiceId, () =>
+      callPaypalTool("get_invoice", { invoice_id: target.paypalInvoiceId }, { ...working, phases }),
+    );
+    working = remoteCall.project;
+    const remote = mapPaypalInvoiceStatus(remoteCall.value);
+    const payerUrl = findPayerUrl(remoteCall.value);
     if (!remote) {
       lines.push(`${current.name}: PayPal returned no status`);
       continue;
     }
     const status: PaymentStatus =
       remote === "invoiced" && current.paymentStatus === "overdue" ? "overdue" : remote;
-    phases = markPhaseStatus(phases, current.id, status, todayUtc());
+    phases = markPhaseStatus(phases, current.id, status, asOf).map((phase) =>
+      phase.id === current.id && payerUrl ? { ...phase, paypalPayerUrl: payerUrl } : phase,
+    );
     lines.push(`${current.name}: ${status}`);
   }
 
-  const overdue = applyOverdue(touch({ ...project, phases }), todayUtc(), () => nid("draft"));
+  const overdue = applyOverdue(touch({ ...working, phases }), asOf, () => nid("draft"));
+  const composed = overdue.changed ? await composeOverdueDrafts(overdue.project) : { ...working, phases };
   return {
-    project: overdue.project,
-    message: `Synced invoice status. ${lines.join("; ")}.`,
+    project: touch(composed),
+    message: `Synced from PayPal. ${lines.join("; ")}.`,
   };
 }
 
@@ -261,65 +306,135 @@ export function shiftNamedPhase(
   if (moved.length === 0) {
     throw new ActionError("No unpaid milestone moved.");
   }
+  const next = appendAction(touch({ ...project, phases }), {
+    tool: "shift_phase",
+    status: "ok",
+    latencyMs: 1,
+    detail: moved.join(", "),
+  });
   return {
-    project: touch({ ...project, phases }),
+    project: next,
     message: `Moved ${moved.join(", ")} by ${days} day${days === 1 ? "" : "s"}.`,
   };
 }
 
-export function runOverdueCheck(project: Project, asOf = todayUtc()): { project: Project; message: string } {
+export async function runOverdueCheck(project: Project): Promise<{ project: Project; message: string }> {
+  const asOf = asOfDate(project);
   const result = applyOverdue(project, asOf, () => nid("draft"));
-  return {
-    project: result.changed ? result.project : project,
-    message: result.changed
-      ? "Overdue invoices shifted dependent milestones and a client update is waiting for approval."
-      : "No unpaid invoice is past its due date.",
-  };
-}
-
-export function simulateOverdue(
-  project: Project,
-  phaseRef: string,
-): { project: Project; message: string } {
-  const phase = requirePhase(project, phaseRef);
-  if (!phase.paypalInvoiceId || phase.paymentStatus === "draft" || phase.paymentStatus === "cancelled") {
-    throw new ActionError(`Invoice ${phase.name} before simulating an overdue payment.`);
+  if (!result.changed) {
+    return { project, message: "No unpaid invoice is past its due date." };
   }
-  if (phase.paymentStatus === "paid") throw new ActionError(`${phase.name} is already paid.`);
-  const forcedDue = addDays(todayUtc(), -7);
-  const phases = project.phases.map((item) =>
-    item.id === phase.id
-      ? {
-          ...item,
-          dueDate: forcedDue,
-          paymentStatus: "invoiced" as const,
-          slipDaysApplied: 0,
-        }
-      : item,
-  );
-  const result = applyOverdue(touch({ ...project, phases }), todayUtc(), () => nid("draft"));
+  const composed = await composeOverdueDrafts(result.project);
+  const next = appendAction(composed, {
+    tool: "check_overdue",
+    status: "ok",
+    latencyMs: 1,
+    detail: asOf,
+  });
   return {
-    project: result.project,
-    message: `Demo: set ${phase.name} due ${forcedDue} and ran the overdue rule. Dependents moved, and a client email is drafted for approval. Nothing was emailed.`,
+    project: next,
+    message: "Overdue invoices shifted dependent milestones and a client update is waiting for approval.",
   };
 }
 
-export function resolveDraft(
+export async function fastForwardClock(
   project: Project,
-  draftId: string,
-  action: "approved" | "discarded",
-): { project: Project; message: string } {
-  if (!project.drafts.some((draft) => draft.id === draftId)) {
+  phaseRef?: string,
+): Promise<{ project: Project; message: string }> {
+  const phase = phaseRef ? requirePhase(project, phaseRef) : undefined;
+  if (phase) {
+    if (!phase.paypalInvoiceId || phase.paymentStatus === "draft" || phase.paymentStatus === "cancelled") {
+      throw new ActionError(`Invoice ${phase.name} before moving the demo clock past its due date.`);
+    }
+    if (phase.paymentStatus === "paid") throw new ActionError(`${phase.name} is already paid.`);
+  }
+  const open = project.phases.filter(
+    (item) => item.paymentStatus === "invoiced" || item.paymentStatus === "overdue",
+  );
+  if (open.length === 0) throw new ActionError("Invoice a phase before moving the demo clock.");
+  const focus =
+    phase ?? open.slice().sort((left, right) => left.dueDate.localeCompare(right.dueDate))[0];
+  const current = project.clockDate && /^\d{4}-\d{2}-\d{2}$/.test(project.clockDate)
+    ? project.clockDate
+    : merchantToday();
+  const pastDue = addDays(focus.dueDate, 7);
+  const target = pastDue > current ? pastDue : addDays(current, 7);
+  const started = Date.now();
+  const stamped = touch({ ...project, clockDate: target });
+  const applied = applyOverdue(stamped, target, () => nid("draft"));
+  const composeStarted = Date.now();
+  let next = await composeOverdueDrafts(applied.project);
+  const before = new Map(project.phases.map((item) => [item.id, item.startDate]));
+  const moved = next.phases.filter((item) => before.get(item.id) !== item.startDate).map((item) => item.name);
+  next = appendAction(next, {
+    tool: "fast_forward_clock",
+    status: "ok",
+    latencyMs: Date.now() - started,
+    detail: `Demo clock ${target}`,
+  });
+  if (moved.length > 0) {
+    next = appendAction(next, {
+      tool: "shift_phase",
+      status: "ok",
+      latencyMs: 1,
+      detail: moved.join(", "),
+    });
+  }
+  next = appendAction(next, {
+    tool: "draft_client_update",
+    status: "ok",
+    latencyMs: Date.now() - composeStarted,
+    detail: "Awaiting approval",
+  });
+  return {
+    project: touch(next),
+    message: `Demo clock is ${target}, 7 days past the Net-7 due date for ${focus.name}. Downstream work moved, and a client update is waiting for approval. Nothing was sent.`,
+  };
+}
+
+export function discardDraft(project: Project, draftId: string): { project: Project; message: string } {
+  if (!project.drafts.some((draft) => draft.id === draftId && draft.status === "pending_approval")) {
     throw new ActionError("Draft not found.");
   }
   const drafts = project.drafts.map((draft) =>
-    draft.id === draftId ? { ...draft, status: action } : draft,
+    draft.id === draftId ? { ...draft, status: "discarded" as const } : draft,
   );
-  const message =
-    action === "approved"
-      ? "Draft approved. It stays in the app for you to copy. It was not emailed."
-      : "Draft discarded. Nothing was emailed.";
-  return { project: touch({ ...project, drafts }), message };
+  return {
+    project: touch({ ...project, drafts }),
+    message: "Draft discarded. Nothing was sent.",
+  };
+}
+
+export async function approveDraft(
+  project: Project,
+  draftId: string,
+): Promise<{ project: Project; message: string }> {
+  const draft = project.drafts.find((item) => item.id === draftId);
+  if (!draft || draft.status !== "pending_approval") {
+    throw new ActionError("Draft not found.");
+  }
+  const phase = project.phases.find((item) => item.id === draft.phaseId);
+  if (!phase?.paypalInvoiceId) {
+    throw new ActionError("This update has no PayPal invoice to remind. Nothing was sent.");
+  }
+  const sent = await traced(project, "send_invoice_reminder", phase.paypalInvoiceId, () =>
+    callPaypalTool(
+      "send_invoice_reminder",
+      {
+        invoice_id: phase.paypalInvoiceId,
+        subject: draft.subject.slice(0, 200),
+        note: reminderNote(draft.body),
+      },
+      project,
+    ),
+  );
+  const drafts = sent.project.drafts.map((item) =>
+    item.id === draftId ? { ...item, status: "approved" as const } : item,
+  );
+  return {
+    project: touch({ ...sent.project, drafts }),
+    message: `Approved. PayPal reminder sent for ${phase.name} (${phase.paypalInvoiceId}).`,
+  };
 }
 
 export function unpaidSummary(project: Project): string {
@@ -345,8 +460,10 @@ export function projectSnapshot(project: Project): string {
     start: phase.startDate,
     end: phase.endDate,
     due: phase.dueDate,
+    invoiceDate: phase.invoiceDate ?? null,
     blocked: phase.blocked,
     invoiceId: phase.paypalInvoiceId ?? null,
+    payerUrl: phase.paypalPayerUrl ?? null,
   }));
   return JSON.stringify(
     {
@@ -354,6 +471,7 @@ export function projectSnapshot(project: Project): string {
       clientEmail: project.clientEmail,
       budget: project.budget,
       pyusdNote: project.pyusdNote,
+      clockDate: project.clockDate ?? null,
       phases,
     },
     null,

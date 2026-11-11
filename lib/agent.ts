@@ -1,19 +1,20 @@
+import { appendAction } from "@/lib/actions";
 import { ActionError } from "@/lib/errors";
 import { cannedAiEnabled } from "@/lib/mode";
 import { isPaypalTool, paypalToolDefinitions, callPaypalTool, paymentWasRecorded, mapPaypalInvoiceStatus } from "@/lib/paypal";
 import { grokComplete } from "@/lib/planner";
 import { findPhase, markPhaseStatus } from "@/lib/schedule";
 import {
+  fastForwardClock,
   invoicePhase,
   projectSnapshot,
   runOverdueCheck,
   shiftNamedPhase,
-  simulateOverdue,
   simulatePayment,
   syncProject,
   unpaidSummary,
 } from "@/lib/service";
-import { todayUtc } from "@/lib/dates";
+import { merchantToday } from "@/lib/dates";
 import type { Project } from "@/lib/types";
 
 interface ToolCall {
@@ -114,7 +115,7 @@ const DOMAIN_TOOLS = [
     function: {
       name: "draft_client_update",
       description:
-        "Treat a milestone as overdue for the demo: set the due date to yesterday, shift dependents, and draft a client email. Never send the email.",
+        "Fast-forward the demo clock to 7 days after the milestone Net-7 due date, shift dependents, and draft a client update for the approval card. Never send the reminder or the email.",
       parameters: {
         type: "object",
         properties: { phase: { type: "string" } },
@@ -127,11 +128,13 @@ const DOMAIN_TOOLS = [
 function systemPrompt(project: Project): string {
   return `You are the Zilla Milestones agent for Zilla Labs.
 You schedule project phases and collect them as PayPal invoices.
-The PayPal Agent Toolkit tools create_invoice, send_invoice, list_invoices, get_invoice, record_payment_for_invoice, and send_invoice_reminder are available for live sandbox calls.
+The PayPal Agent Toolkit tools create_invoice, send_invoice, list_invoices, get_invoice, and record_payment_for_invoice are available for live sandbox calls.
+Do not call send_invoice_reminder. A reminder is sent only when a person clicks Approve on the approval card.
 When the user asks to invoice a phase, call invoice_phase. That tool calls create_invoice and send_invoice for you and updates the Gantt.
+Invoice dates use the merchant calendar in America/Los_Angeles. Due dates are Net 7 from that invoice date.
 You may also call the toolkit tools yourself and then link_paypal_invoice.
 Never claim an invoice was sent, a payment landed, or an email went out unless a tool result says so.
-Client update emails are drafts for a human to approve. Never send them.
+Client updates and PayPal reminders stay drafts until a person approves them. Never send them yourself.
 Phase numbers are 1-based in the current plan order.
 Current project:
 ${projectSnapshot(project)}`;
@@ -162,12 +165,12 @@ async function linkInvoice(project: Project, phaseRef: string, invoiceId: string
   );
   return {
     ...project,
-    phases: markPhaseStatus(phases, phase.id, remote === "draft" ? "invoiced" : remote, todayUtc()),
+    phases: markPhaseStatus(phases, phase.id, remote === "draft" ? "invoiced" : remote, merchantToday()),
     updatedAt: new Date().toISOString(),
   };
 }
 
-async function runTool(
+export async function runAgentTool(
   project: Project,
   name: string,
   args: Record<string, unknown>,
@@ -197,23 +200,35 @@ async function runTool(
       return { project: result.project, output: result.message };
     }
     if (name === "check_overdue") {
-      const result = runOverdueCheck(project);
+      const result = await runOverdueCheck(project);
       return { project: result.project, output: result.message };
     }
     if (name === "draft_client_update") {
-      const result = simulateOverdue(project, String(args.phase ?? ""));
+      const result = await fastForwardClock(project, String(args.phase ?? ""));
       return { project: result.project, output: result.message };
     }
     if (isPaypalTool(name)) {
+      if (name === "send_invoice_reminder") {
+        return {
+          project,
+          output:
+            "A human has to approve the reminder on the approval card before it is sent. Nothing was sent.",
+        };
+      }
+      const started = Date.now();
       const payload = await callPaypalTool(name, args, project);
-      let next = project;
+      let next = appendAction(project, {
+        tool: name,
+        status: "ok",
+        latencyMs: Date.now() - started,
+      });
       if (name === "record_payment_for_invoice" && paymentWasRecorded(payload)) {
         const invoiceId = String(args.invoice_id ?? "");
         const phase = project.phases.find((item) => item.paypalInvoiceId === invoiceId);
         if (phase) {
           next = {
-            ...project,
-            phases: markPhaseStatus(project.phases, phase.id, "paid", todayUtc()),
+            ...next,
+            phases: markPhaseStatus(next.phases, phase.id, "paid", merchantToday()),
             updatedAt: new Date().toISOString(),
           };
         }
@@ -225,8 +240,8 @@ async function runTool(
         if (phase && remote) {
           const status = remote === "invoiced" && phase.paymentStatus === "overdue" ? "overdue" : remote;
           next = {
-            ...project,
-            phases: markPhaseStatus(project.phases, phase.id, status, todayUtc()),
+            ...next,
+            phases: markPhaseStatus(next.phases, phase.id, status, merchantToday()),
             updatedAt: new Date().toISOString(),
           };
         }
@@ -267,16 +282,25 @@ async function demoChat(project: Project, text: string): Promise<{ project: Proj
   if (/overdue/.test(lower)) {
     const phaseMatch = text.match(/phase\s+(\d+|[a-z][\w -]*)/i);
     if (phaseMatch) {
-      const result = simulateOverdue(project, phaseMatch[1]);
+      const result = await fastForwardClock(project, phaseMatch[1]);
       return { project: result.project, reply: result.message };
     }
-    const result = runOverdueCheck(project);
+    const result = await runOverdueCheck(project);
     return { project: result.project, reply: result.message };
   }
   if (/simulate payment|record payment|mark .+ paid/.test(lower)) {
     const phaseMatch = text.match(/phase\s+(\d+|[a-z][\w -]*)/i);
     const result = await simulatePayment(project, phaseMatch?.[1] ?? "1");
     return { project: result.project, reply: result.message };
+  }
+  if (/remind/.test(lower)) {
+    const waiting = project.drafts.some((draft) => draft.status === "pending_approval");
+    return {
+      project,
+      reply: waiting
+        ? "A reminder is on the approval card. I will not send it until you click Approve."
+        : "Nothing is waiting for approval. Invoice a phase, then fast-forward the demo clock if you want a reminder drafted.",
+    };
   }
   if (/invoice/.test(lower)) {
     const phaseMatch = text.match(/phase\s+(\d+|[a-z][\w -]*)/i) ?? text.match(/invoice\s+([a-z0-9][\w -]*)/i);
@@ -322,7 +346,7 @@ async function grokChatLoop(project: Project): Promise<{ project: Project; reply
       } catch {
         args = {};
       }
-      const result = await runTool(working, name, args);
+      const result = await runAgentTool(working, name, args);
       working = result.project;
       messages.push({
         role: "tool",

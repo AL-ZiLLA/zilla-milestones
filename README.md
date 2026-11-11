@@ -1,98 +1,108 @@
-# Zilla Milestones
+# Zilla OS / Milestones
 
-Zilla Milestones by Zilla Labs turns a plain-text project scope into payment-gated phases. An AI agent prices and sequences the work, a Bryntum Gantt chart shows each phase, and PayPal sandbox invoices unlock the next phase when they are paid. If an invoice sits past its due date, downstream bars move later and the agent drafts a client update for a person to approve. The draft is never sent on its own.
+Get paid before the next phase starts.
 
-Built for the PayPal AI Hackathon. Stage 1 is the deliverable set in this repo. Stage 2 weights Technological Implementation equally with the other criteria, and ties break on that criterion. The Bryntum Gantt chart is the schedule surface for the Bryntum sponsor prize.
+Zilla Milestones is a module of Zilla OS, an operating system for running a company. Paste a scope, a client billing email, and a budget. Grok breaks the work into priced phases. A Bryntum Gantt chart treats every phase as a payment gate. PayPal invoices collect the money, and the next phase stays locked until the invoice is paid. If a payment goes past its Net-7 due date, the agent moves the downstream work and drafts a client update. A person approves before any reminder goes out.
 
-## What it does
+Demo: _(hosted URL goes here after deploy)_
 
-1. You paste a scope, a client billing email, and a budget.
-2. Grok (or the canned demo planner) returns phases with durations, dependencies, and dollar amounts. The JSON is checked with a Zod schema before anything is saved.
-3. Phases render in a Bryntum Gantt chart. Each bar is colored by payment status: Draft, Invoiced, Paid, or Overdue.
-4. **Invoice phase** creates and sends a PayPal invoice through the official PayPal Agent Toolkit.
-5. A webhook, a **Sync status** button, or **Simulate payment** marks the phase paid and unlocks dependents.
-6. An overdue invoice shifts dependent phases to the right and drafts a client email. Approval copies the draft. It does not send mail.
-7. The chat panel can invoice a phase, list what is unpaid, or push a milestone back. Those actions go through tools, including the PayPal toolkit tools when sandbox keys are set.
+Video: _(YouTube link goes here after recording)_
 
-A PYUSD checkbox adds a PayPal USD note on the invoice. The charge itself stays a normal PayPal invoice.
+Repo: https://github.com/AL-ZiLLA/zilla-milestones
 
-## How PayPal is used
+## 60-second judge path
 
-Sandbox base URL: `https://api-m.sandbox.paypal.com` when `PAYPAL_MODE` is not `live`.
+No keys required. `DEMO_MODE=true` (or simply omit the keys) runs the whole story.
 
-The agent and the buttons call the [PayPal Agent Toolkit](https://www.npmjs.com/package/@paypal/agent-toolkit) (`@paypal/agent-toolkit/openai`). Enabled toolkit tools:
-
-| Toolkit tool | PayPal API | Role |
-| --- | --- | --- |
-| `create_invoice` | `POST /v2/invoicing/invoices` | Draft a milestone invoice for the phase amount and billing email |
-| `send_invoice` | `POST /v2/invoicing/invoices/{id}/send` | Email the invoice to the client from the sandbox business account |
-| `get_invoice` | `GET /v2/invoicing/invoices/{id}` | Sync one invoice onto the Gantt |
-| `list_invoices` | `GET /v2/invoicing/invoices` | Available to the chat agent |
-| `record_payment_for_invoice` | `POST /v2/invoicing/invoices/{id}/payments` | **Simulate payment**. Method is `OTHER` so the sandbox call does not need a capture id |
-| `send_invoice_reminder` | `POST /v2/invoicing/invoices/{id}/remind` | Available to the chat agent |
-
-OAuth (`POST /v1/oauth2/token`) is handled inside the toolkit. Webhook verification calls `POST /v1/notifications/verify-webhook-signature` with `PAYPAL_WEBHOOK_ID` and the `PayPal-Transmission-*` headers.
-
-`POST /api/paypal/webhook` accepts `INVOICING.INVOICE.PAID`, `INVOICING.INVOICE.CANCELLED`, and `INVOICING.INVOICE.REFUNDED` (plus a status on the resource such as `SENT` or `PAID`). A valid `PAID` event marks that phase paid and unblocks dependents. An invalid signature returns 401 and does not change the chart.
-
-**Invoice phase** is the path the buttons and the `invoice_phase` agent tool use: toolkit `create_invoice`, then `send_invoice`, then the phase flips to Invoiced. The chat agent can also call the toolkit tools directly and finish with `link_paypal_invoice`.
-
-`PAYPAL_MERCHANT_EMAIL` must be the sandbox business email that owns the REST app. PayPal rejects invoices from a different invoicer address.
-
-## How AI is used
-
-Planning and chat use the xAI Grok API, OpenAI-compatible, at `XAI_BASE_URL` (default `https://api.x.ai/v1`) with model `XAI_MODEL` (default `grok-4`).
-
-- **Planner.** One chat completion asks for a JSON plan. `lib/schema.ts` parses it with Zod (`projectName`, `summary`, phases with `name`, `description`, `durationDays`, `amount`, `dependsOn`). On failure it retries once with the validation error. Amounts are then scaled so they sum to the budget. Dates are calendar days, walked in dependency order.
-- **Operator agent.** A tool loop (up to six steps) gets the project snapshot plus domain tools (`invoice_phase`, `shift_phase`, `sync_invoices`, `record_sandbox_payment`, `check_overdue`, `draft_client_update`, `link_paypal_invoice`, `get_project_state`) and the PayPal toolkit tools listed above. Mutations happen only through those tools.
-
-`DEMO_MODE=true`, or a missing key when `DEMO_MODE` is unset, uses a fixed four-phase plan (Discovery, Design, Build, Launch) and a small intent parser that calls the same invoice, shift, sync, and overdue functions. `DEMO_MODE=false` refuses to fall back and requires the keys.
-
-## Bryntum Gantt
-
-The chart is Bryntum Gantt 7.3.8 from the public trial package. It is installed with npm aliasing so imports stay `@bryntum/gantt`:
-
-```json
-"@bryntum/gantt": "npm:@bryntum/gantt-trial@7.3.8"
+```bash
+npm ci
+npm run dev
 ```
 
-That package is commercial evaluation software shipped by Bryntum. It is not covered by this repo's MIT license. The trial build is not minified and may show Bryntum's trial watermark. Do not remove the watermark. A production deployment needs a Bryntum license; switch the alias to the licensed package and keep the same imports. See the [Bryntum npm guide](https://bryntum.com/products/gantt/docs/guide/Gantt/npm-repository).
+Open http://localhost:3000. The first visit seeds an HVAC booking portal ($18,000) for your browser session. Another visitor gets a different session and cannot overwrite yours.
 
-The React wrapper `@bryntum/gantt-react` is not on the public registry. The UI mounts `Gantt` from `@bryntum/gantt` in a client component, with `gantt.css`, the Stockholm Dark theme, and the bundled Font Awesome CSS. Tasks are `manuallyScheduled` so the dates produced by our dependency logic stay put. Dependency arrows still draw. Payment status is a task field, a column, and a bar color (Draft slate, Invoiced gold, Paid green, Overdue red). Dragging and editing inside the grid are off so the chart stays aligned with the store.
+1. The Gantt shows Discovery, Design, Build, and Launch. Discovery is open. Later phases show a padlock until the previous invoice is paid. Diamonds between the bars are payment gates.
+2. With Discovery selected, click **Invoice phase**. The bar turns Invoiced. **Open PayPal invoice** is the payer link (a real sandbox invoice when PayPal keys are set; a mock id in demo mode).
+3. Open **Demo controls** and click **Simulate payment**, or pay the real invoice and wait for the toast `PayPal webhook verified: INVOICING.INVOICE.PAID`. The page updates without a reload. Design unlocks.
+4. Invoice Design, then **Fast-forward past due**. The demo clock jumps seven days past the Net-7 due date. Design turns Overdue, later bars move right, and **At risk** updates. The due date itself is not backdated.
+5. Read the approval card. Click **Approve** to send a PayPal reminder (`send_invoice_reminder`). **Discard** sends nothing.
+6. In the agent box, ask `What's unpaid?` or `Push design back a week`.
+
+**New plan** clears the session and shows sample scopes (HVAC booking portal, Harbor & Pine). **Sync from PayPal** re-reads invoice status if a webhook is missed.
+
+## How the agent is gated
+
+Money and client messages do not go out on their own.
+
+| Step | Who starts it | What actually runs |
+| --- | --- | --- |
+| Plan | **Build milestone plan** | Grok returns JSON. Zod checks it. Amounts are scaled to the budget. One repair retry. |
+| Invoice | **Invoice phase**, or a chat request to invoice | Toolkit `create_invoice`, then `send_invoice` |
+| Pay | Buyer on the PayPal invoice, or **Simulate payment** inside Demo controls | Verified `INVOICING.INVOICE.PAID` webhook, or toolkit `record_payment_for_invoice` |
+| Late payment | Demo clock or the real merchant date passing the due date | Schedule shift and a drafted client update. Nothing is sent. |
+| Reminder | **Approve** on the card | Toolkit `send_invoice_reminder` only. The chat agent cannot send it. |
+
+The agent actions panel lists each tool call in order with the PayPal API name, status, and latency. Client update copy is written by Grok when `XAI_API_KEY` is set and `DEMO_MODE` is not forcing the canned planner. The template in `lib/email.ts` is the fallback, and a draft is kept only if it cites the amount, the due date, and the schedule impact.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  user[Browser] --> ui[Next.js App Router UI]
-  ui --> gantt[Bryntum Gantt]
+  user[Browser session cookie] --> ui[Next.js App Router]
+  ui --> gantt[Bryntum Gantt Community]
   ui --> api[Route handlers]
-  api --> store[(JSON file store)]
+  api --> store[(Session store)]
   api --> agent[Grok tool loop]
   agent --> toolkit[PayPal Agent Toolkit]
-  toolkit --> paypal[PayPal Invoicing v2 sandbox]
+  toolkit --> paypal[PayPal Invoicing v2]
   paypal --> hook[POST /api/paypal/webhook]
   hook --> store
-  store --> gantt
+  store --> ui
 ```
 
-Phases, drafts, and chat live in `data/store.json` (or `ZILLA_STORE_PATH`). On Vercel the file is `/tmp/zilla-milestones.json`. That disk is local to one instance and disappears on a cold start, so the hackathon demo is meant to run locally. There is no external database.
+The store is one project per visitor session. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to use Postgres (`supabase/migrations/20261111000000_zilla_sessions.sql`, one row per session). Otherwise the app uses a JSON file: `data/store.json` locally, or `/tmp/zilla-milestones.json` on Vercel when `ZILLA_STORE_PATH` is unset. The webhook has no browser cookie. It finds the session by PayPal invoice id.
 
-## Setup
+`vercel.json` raises the API route limit to 60 seconds so a Grok plan can finish. This repo does not deploy itself.
 
-Requirements: Node.js 20 or newer.
+## PayPal
 
-```bash
-cp .env.example .env.local
-npm ci
-npm test
-npm run lint
-npm run dev
-```
+Sandbox base URL: `https://api-m.sandbox.paypal.com` unless `PAYPAL_MODE=live`.
 
-Open http://localhost:3000.
+| Toolkit tool | PayPal API | Role |
+| --- | --- | --- |
+| `create_invoice` | `POST /v2/invoicing/invoices` | Draft the phase invoice. `invoice_date` is the merchant date in America/Los_Angeles, never UTC today |
+| `set_invoice_due_date` | `PUT /v2/invoicing/invoices/{id}` | Before send, set `payment_term` to `DUE_ON_DATE_SPECIFIED` with due = invoice date + 7. The toolkit create schema has no due-date field, and PayPal has no `NET_7` term. A rejected update does not block send; the invoice note still states Net 7 |
+| `send_invoice` | `POST /v2/invoicing/invoices/{id}/send` | Email the invoice |
+| `get_invoice` | `GET /v2/invoicing/invoices/{id}` | Read status and the payer-view link. **Sync from PayPal** uses this |
+| `list_invoices` | `GET /v2/invoicing/invoices` | Available to the chat agent |
+| `record_payment_for_invoice` | `POST /v2/invoicing/invoices/{id}/payments` | Demo-controls simulate payment. Method `OTHER` |
+| `send_invoice_reminder` | `POST /v2/invoicing/invoices/{id}/remind` | Sent only from **Approve** |
 
-### Environment variables
+OAuth stays inside the toolkit. Webhook verification calls `POST /v1/notifications/verify-webhook-signature` with `PAYPAL_WEBHOOK_ID`. A bad signature returns 401 and does not change the chart. A verified `INVOICING.INVOICE.PAID` marks the phase paid, unlocks dependents, and the open page toasts `PayPal webhook verified: INVOICING.INVOICE.PAID`.
+
+`PAYPAL_MERCHANT_EMAIL` must be the sandbox business email that owns the REST app.
+
+In demo mode, a webhook is accepted only with header `x-zilla-demo-signature: demo`.
+
+## AI
+
+Planning and chat use xAI Grok at `XAI_BASE_URL` (default `https://api.x.ai/v1`) with `XAI_MODEL` (default `grok-4`).
+
+- **Planner.** One completion returns JSON. `lib/schema.ts` checks it. On failure it retries once with the validation error.
+- **Operator.** A tool loop (up to six steps) uses domain tools plus the PayPal toolkit tools. State changes go through tools.
+- **Client update.** Grok writes the overdue note. The template is used when there is no key, when demo mode is on, or when the model omits the amount, due date, or schedule impact.
+
+`DEMO_MODE=true`, or a missing key when `DEMO_MODE` is unset, uses a fixed four-phase plan and a small intent parser that calls the same functions. `DEMO_MODE=false` does not fall back.
+
+## Bryntum Gantt
+
+The chart is Bryntum Gantt Community 8.0.0 (`@bryntum/gantt-community`), MIT licensed. It replaces the earlier trial package, so the chart does not show a trial watermark. Font Awesome comes from `@bryntum/core-community` at the same version. The React wrapper is not required: a client component mounts `Gantt` with `gantt.css` and the Stockholm Dark theme.
+
+Tasks are `manuallyScheduled` on a 7-day calendar so our dates stay put. The view preset is week-and-month, and the tick size is fitted so the bars sit inside a 1920×1080 frame. Name and date columns are wide enough to read. Bar color follows payment state (Draft, Invoiced, Paid, Overdue) with a progress fill. A duration-zero diamond sits on each dependency as a payment gate. Downstream rows show a padlock until the upstream phase is paid.
+
+Community does not include the Business/Enterprise features (full task editor, baselines, progress line, PDF export). Those are left off.
+
+## Environment
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
@@ -102,47 +112,42 @@ Open http://localhost:3000.
 | `XAI_BASE_URL` | no | Default `https://api.x.ai/v1` |
 | `PAYPAL_CLIENT_ID` | for live sandbox | Sandbox REST app client id |
 | `PAYPAL_CLIENT_SECRET` | for live sandbox | Sandbox REST app secret |
+| `PAYPAL_WEBHOOK_ID` | for live webhook verification | Webhook id from the PayPal dashboard |
 | `PAYPAL_MODE` | no | `sandbox` (default) or `live` |
 | `PAYPAL_MERCHANT_EMAIL` | for live invoices | Sandbox business email that owns the app |
 | `PAYPAL_MERCHANT_NAME` | no | Default `Zilla Labs` |
-| `PAYPAL_WEBHOOK_ID` | for live webhook verification | Webhook id from the PayPal dashboard |
-| `ZILLA_STORE_PATH` | no | Override the JSON store path |
+| `SUPABASE_URL` | for hosted sessions | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | for hosted sessions | Server-only service role key. Never expose it to the browser |
+| `ZILLA_STORE_PATH` | no | JSON file path when Supabase is not set |
 
-Never commit `.env.local`. Only `.env.example` is in git.
+Never commit `.env.local` or a service role key. Only `.env.example` is in git.
 
-PayPal app setup: create a sandbox REST app, copy the client id and secret, and set the merchant email to that business account. For webhooks, subscribe the app to `INVOICING.INVOICE.PAID`, `INVOICING.INVOICE.CANCELLED`, and `INVOICING.INVOICE.REFUNDED`, then point the listener at `https://<public-host>/api/paypal/webhook`. The demo does not need a public URL: use **Sync status** or **Simulate payment**.
+Apply `supabase/migrations/20261111000000_zilla_sessions.sql` before pointing the app at Supabase. Subscribe the PayPal app to `INVOICING.INVOICE.PAID`, `INVOICING.INVOICE.CANCELLED`, and `INVOICING.INVOICE.REFUNDED`, and set the listener to `https://<public-host>/api/paypal/webhook`.
 
-In demo mode, a webhook is accepted only with header `x-zilla-demo-signature: demo`.
+## Run
 
-## Testing for judges
+Node.js 20 or newer.
 
 ```bash
+cp .env.example .env.local
 npm ci
+npm test
+npm run lint
+npm run build
+npm run dev
+```
+
+Open http://localhost:3000.
+
+```bash
 npm test
 npm run lint
 npm run build
 ```
 
-Unit tests (Vitest):
+Vitest covers the plan schema, the overdue engine, webhook signature verification and unlock, merchant-local invoice dates, Net-7 due dates, the approval gate, and session isolation. No keys are required. `DEMO_MODE=true` runs the story end to end.
 
-- `tests/schema.test.ts` — Zod plan schema, fenced JSON, and the canned plan scaled to the budget
-- `tests/schedule.test.ts` — dependency shift when an invoice is overdue, no double shift, paid tasks stay put, unlock on payment, cycle rejection
-- `tests/webhook.test.ts` — handler with signature verification mocked, plus the PayPal verify call with `fetch` mocked
-
-No keys are required for the tests or for `DEMO_MODE=true`.
-
-## Demo script
-
-Leave keys empty, or set `DEMO_MODE=true`, then `npm run dev`.
-
-1. The sample scope is already filled. Billing email `billing@example.com`, budget `12000`. Leave **Note PYUSD** on if you want the invoice note. Click **Build milestone plan**.
-2. The Bryntum Gantt shows Discovery, Design, Build, and Launch. Discovery is Draft and unlocked. The others are blocked.
-3. With Discovery selected, click **Invoice phase**. The bar turns Invoiced (gold) and a PayPal invoice id appears. In sandbox mode this is a real invoice email to the billing address. In demo mode the id looks like `INV2-DEMO-...`.
-4. Click **Simulate payment**. Discovery turns Paid (green) and Design unlocks.
-5. Select Design, **Invoice phase**, then **Simulate overdue**. Design turns Overdue (red). Build and Launch move later. A client update appears and says it has not been sent. **Approve and copy** only copies it. **Discard** drops it.
-6. In the agent panel, try `What's unpaid?`, `Invoice phase 1` (already paid, so it should say so), and `Push design back a week`.
-7. **Sync status** re-reads invoice state. **Check overdue** runs the same rule without forcing a due date.
-8. Optional webhook, demo mode:
+Optional demo webhook, after an invoice id exists in your session:
 
 ```bash
 curl -s -X POST http://localhost:3000/api/paypal/webhook \
@@ -151,24 +156,19 @@ curl -s -X POST http://localhost:3000/api/paypal/webhook \
   -d '{"event_type":"INVOICING.INVOICE.PAID","resource":{"id":"INV2-DEMO-REPLACE","status":"PAID"}}'
 ```
 
-Replace the id with the invoice id shown on the phase card, then reload. An unsigned POST returns 401.
+Replace the id with the invoice id on the phase. The open page picks it up on its own. An unsigned POST returns 401.
 
-**New plan** clears the JSON store.
+## Layout
 
-## Project layout
-
-- `app/` — App Router UI and route handlers
-- `components/GanttPanel.tsx` — Bryntum Gantt mount
-- `lib/schema.ts` — Zod plan
-- `lib/schedule.ts` — dates, blocks, manual shifts
-- `lib/overdue.ts` — overdue slip and email draft
-- `lib/paypal.ts` — toolkit calls and the demo PayPal mock
-- `lib/agent.ts` — Grok tool loop and demo intents
-- `lib/webhook.ts` — signature verification and event application
-- `tests/` — Vitest
+- `app/` — App Router UI, favicon, Open Graph image, and route handlers
+- `components/GanttPanel.tsx` — Bryntum Gantt Community mount
+- `lib/invoice-payload.ts` — merchant invoice date and Net-7 body
+- `lib/store.ts` — file store and Supabase store
+- `lib/compose.ts` — Grok client update, with the template fallback
+- `supabase/migrations/20261111000000_zilla_sessions.sql` — session table
 
 ## License
 
 Application code is MIT. See `LICENSE`.
 
-Bryntum Gantt trial (`@bryntum/gantt-trial`) is Bryntum commercial evaluation software and stays under Bryntum's terms. PayPal Agent Toolkit is under its own license as published on npm.
+Bryntum Gantt Community (`@bryntum/gantt-community` 8.0.0) and `@bryntum/core-community` 8.0.0 are MIT, copyright 2009–2026 Bryntum AB. PayPal Agent Toolkit is under its own license as published on npm.

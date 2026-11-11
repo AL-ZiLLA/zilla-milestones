@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { todayUtc } from "@/lib/dates";
-import { errorResponse, projectResponse } from "@/lib/http";
-import { applyOverdue } from "@/lib/overdue";
-import { createProject, nid } from "@/lib/service";
+import { errorResponse, projectResponse, readSessionProject } from "@/lib/http";
+import { createProject } from "@/lib/service";
 import { runtimeMode } from "@/lib/mode";
-import { readProject, saveProject } from "@/lib/store";
+import { ensureSession } from "@/lib/session";
+import { getStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const createSchema = z.object({
   scope: z.string().trim().min(20, "Add a bit more scope so the plan has something to split."),
@@ -18,11 +18,7 @@ const createSchema = z.object({
 
 export async function GET() {
   try {
-    let project = readProject();
-    if (project) {
-      const checked = applyOverdue(project, todayUtc(), () => nid("draft"));
-      if (checked.changed) project = saveProject(checked.project);
-    }
+    const project = await readSessionProject();
     return NextResponse.json({ project, mode: runtimeMode() });
   } catch (error) {
     return errorResponse(error);
@@ -33,6 +29,8 @@ export async function POST(request: Request) {
   try {
     const body = createSchema.parse(await request.json());
     const project = await createProject(body);
+    const sessionId = await ensureSession();
+    await getStore().write(sessionId, project);
     return projectResponse(project, "Milestone plan is on the Gantt.");
   } catch (error) {
     return errorResponse(error);
@@ -40,6 +38,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
-  saveProject(null);
+  const sessionId = await ensureSession();
+  await getStore().write(sessionId, null);
   return NextResponse.json({ project: null, mode: runtimeMode() });
 }

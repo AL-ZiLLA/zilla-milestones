@@ -1,19 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import "@bryntum/gantt/fontawesome/css/fontawesome.css";
-import "@bryntum/gantt/fontawesome/css/solid.css";
-import "@bryntum/gantt/gantt.css";
-import "@bryntum/gantt/stockholm-dark.css";
-import { addDays } from "@/lib/dates";
+import "@bryntum/core-community/fontawesome/css/fontawesome.css";
+import "@bryntum/core-community/fontawesome/css/solid.css";
+import "@bryntum/gantt-community/gantt.css";
+import "@bryntum/gantt-community/stockholm-dark.css";
+import { addDays, daysBetween } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
-import { STATUS_LABEL } from "@/lib/status";
+import { paymentProgress, STATUS_LABEL } from "@/lib/status";
 import type { PaymentStatus, Phase } from "@/lib/types";
 
 interface GanttLike {
   destroy: () => void;
   project: { loadInlineData: (data: object) => Promise<void> };
   setTimeSpan?: (start: Date, end: Date) => void;
+  tickSize?: number;
+  columns?: { getAt: (index: number) => { width: number } | undefined };
+  subGrids?: { locked?: { width: number } };
 }
 
 interface BryntumModule {
@@ -24,6 +27,9 @@ interface BryntumModule {
   };
 }
 
+const LOCK_ICON = `<svg class="zilla-lock-icon" viewBox="0 0 24 24" aria-label="Locked until paid"><path fill="currentColor" d="M8 10V8a4 4 0 1 1 8 0v2h1.2A1.8 1.8 0 0 1 19 11.8v7.4A1.8 1.8 0 0 1 17.2 21H6.8A1.8 1.8 0 0 1 5 19.2v-7.4A1.8 1.8 0 0 1 6.8 10H8zm2 0h4V8a2 2 0 1 0-4 0v2z"/></svg>`;
+const OPEN_ICON = `<svg class="zilla-lock-icon is-open" viewBox="0 0 24 24" aria-label="Unlocked"><path fill="currentColor" d="M8 10V8a4 4 0 0 1 7.5-2h-2.1A2 2 0 0 0 10 8v2H6.8A1.8 1.8 0 0 0 5 11.8v7.4A1.8 1.8 0 0 0 6.8 21h10.4a1.8 1.8 0 0 0 1.8-1.8v-7.4a1.8 1.8 0 0 0-1.8-1.8H8zm4 3.2a1.4 1.4 0 0 1 .7 2.6V19h-1.4v-3.2a1.4 1.4 0 0 1 .7-2.6z"/></svg>`;
+
 function encode(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -32,7 +38,102 @@ function encode(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-function chartData(projectName: string, phases: Phase[]) {
+function columnLayout(width: number): {
+  name: number;
+  date: number;
+  amount: number;
+  payment: number;
+  gate: number;
+  locked: number;
+} {
+  if (width >= 1400) {
+    return { name: 220, date: 118, amount: 128, payment: 118, gate: 76, locked: 220 + 118 + 118 + 128 + 118 + 76 };
+  }
+  if (width >= 1000) {
+    return { name: 180, date: 108, amount: 116, payment: 108, gate: 68, locked: 180 + 108 + 108 + 116 + 108 + 68 };
+  }
+  return { name: 148, date: 96, amount: 104, payment: 96, gate: 64, locked: 148 + 96 + 96 + 104 + 96 + 64 };
+}
+
+function chartData(phases: Phase[]) {
+  const gates = phases.flatMap((phase) =>
+    phases
+      .filter((successor) => successor.dependencies.includes(phase.id))
+      .map((successor) => ({
+        id: `gate-${phase.id}-${successor.id}`,
+        from: phase.id,
+        to: successor.id,
+        startDate: phase.endDate,
+        open: phase.paymentStatus === "paid",
+      })),
+  );
+  const gateAfter = new Map<string, typeof gates>();
+  for (const gate of gates) {
+    const list = gateAfter.get(gate.from) ?? [];
+    list.push(gate);
+    gateAfter.set(gate.from, list);
+  }
+
+  const tasks = phases.flatMap((phase) => {
+    const progress = paymentProgress(phase.paymentStatus);
+    const phaseTask = {
+      id: phase.id,
+      name: phase.name,
+      startDate: phase.startDate,
+      endDate: phase.endDate,
+      duration: phase.durationDays,
+      durationUnit: "day",
+      manuallyScheduled: true,
+      calendar: "alldays",
+      percentDone: progress,
+      paymentStatus: phase.paymentStatus,
+      amount: phase.amount,
+      phaseId: phase.id,
+      blocked: phase.blocked,
+      isGate: false,
+      gateState: phase.blocked ? "locked" : "open",
+      zillaStart: phase.startDate,
+      zillaEnd: phase.endDate,
+      cls: `zilla-bar zilla-${phase.paymentStatus}${phase.blocked ? " zilla-locked" : ""}`,
+    };
+    const diamonds = (gateAfter.get(phase.id) ?? []).map((gate) => ({
+      id: gate.id,
+      name: "Payment gate",
+      startDate: gate.startDate,
+      endDate: gate.startDate,
+      duration: 0,
+      durationUnit: "day",
+      manuallyScheduled: true,
+      calendar: "alldays",
+      percentDone: gate.open ? 100 : 0,
+      paymentStatus: gate.open ? "paid" : "overdue",
+      amount: null,
+      phaseId: phase.id,
+      blocked: !gate.open,
+      isGate: true,
+      gateState: gate.open ? "gate-open" : "gate-locked",
+      zillaStart: gate.startDate,
+      zillaEnd: gate.startDate,
+      cls: `zilla-gate ${gate.open ? "zilla-gate-open" : "zilla-gate-locked"}`,
+    }));
+    return [phaseTask, ...diamonds];
+  });
+
+  const dependencies = phases.flatMap((phase) =>
+    phase.dependencies.flatMap((dependencyId) => {
+      const gate = gates.find((item) => item.from === dependencyId && item.to === phase.id);
+      const locked = phase.blocked;
+      const cls = locked ? "zilla-dep-locked" : "zilla-dep-open";
+      if (!gate) {
+        return [{ id: `${dependencyId}-${phase.id}`, fromTask: dependencyId, toTask: phase.id, cls }];
+      }
+      return [
+        { id: `${dependencyId}-${gate.id}`, fromTask: dependencyId, toTask: gate.id, cls },
+        { id: `${gate.id}-${phase.id}`, fromTask: gate.id, toTask: phase.id, cls },
+      ];
+    }),
+  );
+
   return {
     calendarsData: [
       {
@@ -42,38 +143,8 @@ function chartData(projectName: string, phases: Phase[]) {
         intervals: [],
       },
     ],
-    tasksData: [
-      {
-        id: "project-root",
-        name: projectName,
-        expanded: true,
-        manuallyScheduled: true,
-        calendar: "alldays",
-        children: phases.map((phase) => ({
-          id: phase.id,
-          name: phase.name,
-          startDate: phase.startDate,
-          duration: phase.durationDays,
-          durationUnit: "day",
-          manuallyScheduled: true,
-          calendar: "alldays",
-          paymentStatus: phase.paymentStatus,
-          amount: phase.amount,
-          phaseId: phase.id,
-          blocked: phase.blocked,
-          zillaStart: phase.startDate,
-          zillaEnd: phase.endDate,
-          cls: `zilla-bar zilla-${phase.paymentStatus}`,
-        })),
-      },
-    ],
-    dependenciesData: phases.flatMap((phase) =>
-      phase.dependencies.map((dependencyId) => ({
-        id: `${dependencyId}-${phase.id}`,
-        fromTask: dependencyId,
-        toTask: phase.id,
-      })),
-    ),
+    tasksData: tasks,
+    dependenciesData: dependencies,
   };
 }
 
@@ -84,12 +155,30 @@ function addClass(target: unknown, className: string) {
   }
 }
 
+function frame(chart: GanttLike, phases: Phase[], host: HTMLElement) {
+  if (!chart.setTimeSpan || phases.length === 0) return;
+  const layout = columnLayout(host.clientWidth || window.innerWidth);
+  const widths = [layout.name, layout.date, layout.date, layout.amount, layout.payment, layout.gate];
+  widths.forEach((width, index) => {
+    const column = chart.columns?.getAt(index);
+    if (column) column.width = width;
+  });
+  if (chart.subGrids?.locked) chart.subGrids.locked.width = layout.locked;
+  const start = phases.map((phase) => phase.startDate).sort()[0];
+  const end = phases.map((phase) => phase.endDate).sort().at(-1);
+  if (!start || !end) return;
+  const startDate = addDays(start, -2);
+  const endDate = addDays(end, 7);
+  const weeks = Math.max(1, Math.ceil(daysBetween(startDate, endDate) / 7));
+  const timeline = Math.max(220, host.clientWidth - layout.locked - 8);
+  chart.tickSize = Math.max(28, Math.min(120, Math.floor(timeline / weeks)));
+  chart.setTimeSpan(new Date(`${startDate}T00:00:00`), new Date(`${endDate}T00:00:00`));
+}
+
 export function GanttPanel({
-  projectName,
   phases,
   onSelect,
 }: {
-  projectName: string;
   phases: Phase[];
   onSelect: (phaseId: string) => void;
 }) {
@@ -111,6 +200,7 @@ export function GanttPanel({
       phase.durationDays,
       phase.paymentStatus,
       phase.amount,
+      phase.blocked,
       phase.dependencies.join(","),
     ]),
   );
@@ -119,11 +209,15 @@ export function GanttPanel({
     let dead = false;
     let chart: GanttLike | null = null;
     const host = hostRef.current;
+    const observer = new ResizeObserver(() => {
+      if (chart && host) frame(chart, phasesRef.current, host);
+    });
 
     async function boot() {
       try {
-        const mod = (await import("@bryntum/gantt")) as unknown as BryntumModule;
+        const mod = (await import("@bryntum/gantt-community")) as unknown as BryntumModule;
         if (dead || !host) return;
+        const layout = columnLayout(host.clientWidth || window.innerWidth);
         class PhaseTask extends mod.TaskModel {
           static get fields() {
             return [
@@ -133,15 +227,25 @@ export function GanttPanel({
               { name: "zillaStart", type: "string" },
               { name: "zillaEnd", type: "string" },
               { name: "blocked", type: "boolean" },
+              { name: "isGate", type: "boolean" },
+              { name: "gateState", type: "string" },
             ];
           }
         }
         chart = new mod.Gantt({
           appendTo: host,
-          startDate: phasesRef.current[0]?.startDate,
-          rowHeight: 52,
-          barMargin: 10,
-          viewPreset: "weekAndDayLetter",
+          rowHeight: 46,
+          barMargin: 8,
+          viewPreset: {
+            base: "weekAndMonth",
+            headers: [
+              { unit: "month", dateFormat: "MMM YYYY" },
+              { unit: "week", dateFormat: "DD MMM" },
+            ],
+          },
+          subGridConfigs: {
+            locked: { width: layout.locked },
+          },
           project: {
             taskModelClass: PhaseTask,
             autoSetConstraints: false,
@@ -151,25 +255,39 @@ export function GanttPanel({
             daysPerMonth: 30,
           },
           columns: [
-            { type: "name", text: "Milestone", width: 220 },
-            { field: "zillaStart", text: "Start", width: 110 },
-            { field: "zillaEnd", text: "Finish", width: 110 },
+            { type: "name", text: "Milestone", width: layout.name },
+            { field: "zillaStart", text: "Start", width: layout.date },
+            { field: "zillaEnd", text: "Finish", width: layout.date },
             {
               field: "amount",
               text: "Amount",
-              width: 110,
-              renderer: ({ value }: { value: unknown }) =>
-                typeof value === "number" ? formatMoney(value) : "",
+              width: layout.amount,
+              renderer: ({ value, record }: { value: unknown; record: { get: (field: string) => unknown } }) =>
+                record.get("isGate") || typeof value !== "number" ? "" : formatMoney(value),
             },
             {
               field: "paymentStatus",
               text: "Payment",
-              width: 130,
+              width: layout.payment,
               htmlEncode: false,
-              renderer: ({ value }: { value: unknown }) => {
-                const status = (typeof value === "string" ? value : "draft") as PaymentStatus;
+              renderer: ({ record }: { record: { get: (field: string) => unknown } }) => {
+                if (record.get("isGate")) return `<span class="zilla-pill zilla-pill-draft">Gate</span>`;
+                const status = String(record.get("paymentStatus") || "draft") as PaymentStatus;
                 const label = STATUS_LABEL[status] ?? "Draft";
                 return `<span class="zilla-pill zilla-pill-${encode(status)}">${encode(label)}</span>`;
+              },
+            },
+            {
+              field: "gateState",
+              text: "Gate",
+              width: layout.gate,
+              align: "center",
+              htmlEncode: false,
+              renderer: ({ value }: { value: unknown }) => {
+                const state = String(value || "");
+                if (state === "locked" || state === "gate-locked") return LOCK_ICON;
+                if (state === "open" || state === "gate-open") return OPEN_ICON;
+                return "";
               },
             },
           ],
@@ -177,21 +295,20 @@ export function GanttPanel({
             taskDrag: false,
             taskResize: false,
             taskDragCreate: false,
-            taskEdit: false,
             taskMenu: false,
             cellEdit: false,
             dependencies: true,
-            dependencyEdit: false,
-            percentBar: false,
-            baselines: false,
-            progressLine: false,
-            projectLines: false,
             taskTooltip: {
               template: ({ taskRecord }: { taskRecord: { name?: string; get: (field: string) => unknown } }) => {
+                if (taskRecord.get("isGate")) {
+                  const open = taskRecord.get("gateState") === "gate-open";
+                  return `<div><strong>Payment gate</strong><div>${open ? "Paid — next phase is open" : "Locked until this phase is paid"}</div></div>`;
+                }
                 const status = String(taskRecord.get("paymentStatus") || "draft") as PaymentStatus;
                 const amount = taskRecord.get("amount");
                 const money = typeof amount === "number" ? formatMoney(amount) : "";
-                return `<div><strong>${encode(taskRecord.name || "")}</strong><div>${encode(STATUS_LABEL[status] ?? status)} ${encode(money)}</div></div>`;
+                const lock = taskRecord.get("blocked") ? " · Locked" : "";
+                return `<div><strong>${encode(taskRecord.name || "")}</strong><div>${encode(STATUS_LABEL[status] ?? status)} ${encode(money)}${encode(lock)}</div></div>`;
               },
             },
           },
@@ -206,17 +323,30 @@ export function GanttPanel({
             renderData,
           }: {
             taskRecord: { get: (field: string) => unknown };
-            renderData: { cls?: unknown; wrapperCls?: unknown };
+            renderData: { cls?: unknown; wrapperCls?: unknown; style?: Record<string, string> };
           }) => {
             const status = String(taskRecord.get("paymentStatus") || "draft");
+            const progress = Number(taskRecord.get("percentDone") || 0);
+            if (renderData) {
+              renderData.style = { ...(renderData.style ?? {}), "--zilla-progress": `${progress}%` };
+            }
             addClass(renderData?.cls, `zilla-${status}`);
             addClass(renderData?.wrapperCls, `zilla-${status}`);
+            if (taskRecord.get("isGate")) {
+              addClass(renderData?.cls, String(taskRecord.get("gateState")) === "gate-open" ? "zilla-gate-open" : "zilla-gate-locked");
+              return "";
+            }
+            if (taskRecord.get("blocked")) {
+              addClass(renderData?.cls, "zilla-locked");
+              return LOCK_ICON;
+            }
             return "";
           },
         });
         chartRef.current = chart;
-        await chart.project.loadInlineData(chartData(projectName, phasesRef.current));
-        frame(chart, phasesRef.current);
+        await chart.project.loadInlineData(chartData(phasesRef.current));
+        frame(chart, phasesRef.current, host);
+        observer.observe(host);
         if (!dead) setReady(true);
       } catch (bootError) {
         if (!dead) {
@@ -228,38 +358,26 @@ export function GanttPanel({
     void boot();
     return () => {
       dead = true;
+      observer.disconnect();
       chart?.destroy();
       chartRef.current = null;
       setReady(false);
       if (host) host.innerHTML = "";
     };
-    // Boot once per mount. Project swaps remount the panel via key.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart || !ready) return;
-    void chart.project.loadInlineData(chartData(projectName, phases)).then(() => {
-      frame(chart, phases);
+    const host = hostRef.current;
+    if (!chart || !ready || !host) return;
+    void chart.project.loadInlineData(chartData(phases)).then(() => {
+      frame(chart, phases, host);
     });
-  }, [dataKey, phases, projectName, ready]);
+  }, [dataKey, phases, ready]);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-line bg-[#0c1612]">
-      {error ? (
-        <div className="p-6 text-sm text-red-200">{error}</div>
-      ) : (
-        <div ref={hostRef} className="zilla-gantt" />
-      )}
+    <div className="h-full overflow-hidden rounded-2xl border border-line bg-[#0c1612]" data-testid="gantt">
+      {error ? <div className="p-6 text-sm text-red-200">{error}</div> : <div ref={hostRef} className="zilla-gantt" />}
     </div>
   );
-}
-
-function frame(chart: GanttLike, phases: Phase[]) {
-  if (!chart.setTimeSpan || phases.length === 0) return;
-  const start = phases.map((phase) => phase.startDate).sort()[0];
-  const end = phases.map((phase) => phase.endDate).sort().at(-1);
-  if (!start || !end) return;
-  chart.setTimeSpan(new Date(`${addDays(start, -3)}T00:00:00`), new Date(`${addDays(end, 14)}T00:00:00`));
 }

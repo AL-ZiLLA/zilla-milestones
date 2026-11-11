@@ -20,6 +20,8 @@ export interface Phase {
   paymentStatus: PaymentStatus;
   dueDate: string;
   paypalInvoiceId?: string;
+  paypalPayerUrl?: string;
+  invoiceDate?: string;
   slipDaysApplied: number;
   blocked: boolean;
   paidAt?: string;
@@ -41,6 +43,22 @@ export interface ChatMessage {
   at: string;
 }
 
+export interface AgentAction {
+  id: string;
+  tool: string;
+  paypalApi: string | null;
+  status: "ok" | "error";
+  latencyMs: number;
+  detail?: string;
+  at: string;
+}
+
+export interface ActivityEvent {
+  id: string;
+  message: string;
+  at: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -54,6 +72,9 @@ export interface Project {
   phases: Phase[];
   drafts: EmailDraft[];
   messages: ChatMessage[];
+  clockDate?: string | null;
+  actions?: AgentAction[];
+  events?: ActivityEvent[];
 }
 
 export interface RuntimeMode {

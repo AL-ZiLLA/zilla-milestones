@@ -1,4 +1,5 @@
-import { assertPaypalConfigured, mockPaypalEnabled } from "@/lib/mode";
+import { payerViewUrl, type PaypalInvoiceBody } from "@/lib/invoice-payload";
+import { assertPaypalConfigured, mockPaypalEnabled, paypalBaseUrl } from "@/lib/mode";
 import type { PaymentStatus, Project } from "@/lib/types";
 
 export interface PaypalFunctionTool {
@@ -110,7 +111,12 @@ function mockPaypal(name: string, args: Record<string, unknown>, project?: Proje
   if (name === "create_invoice") {
     const reference = String(args.reference || "phase");
     const id = `INV2-DEMO-${reference}`.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 48);
-    return { id, status: "DRAFT" };
+    return {
+      id,
+      status: "DRAFT",
+      detail: { invoice_date: args.invoice_date },
+      links: [{ href: payerViewUrl(id), rel: "payer-view", method: "GET" }],
+    };
   }
   if (name === "send_invoice" || name === "send_invoice_reminder") {
     return { success: true, id: args.invoice_id, status: "SENT" };
@@ -125,6 +131,8 @@ function mockPaypal(name: string, args: Record<string, unknown>, project?: Proje
       id,
       status: phase ? paypalStatus(phase.paymentStatus) : "SENT",
       due_date: phase?.dueDate,
+      detail: { due_date: phase?.dueDate },
+      links: [{ href: payerViewUrl(id), rel: "payer-view", method: "GET" }],
     };
   }
   if (name === "list_invoices") {
@@ -213,6 +221,34 @@ function readStatus(value: unknown, depth = 0): string {
     if (nested) return nested;
   }
   return "";
+}
+
+export async function applyInvoiceDueDate(
+  invoiceId: string,
+  body: PaypalInvoiceBody,
+  deps?: { fetchImpl?: typeof fetch; token?: string; baseUrl?: string },
+): Promise<{ ok: boolean; detail?: string }> {
+  if (!deps && mockPaypalEnabled()) return { ok: true };
+  const fetchImpl = deps?.fetchImpl ?? fetch;
+  const baseUrl = (deps?.baseUrl ?? paypalBaseUrl()).replace(/\/$/, "");
+  try {
+    const token = deps?.token ?? (await getPaypalAccessToken());
+    const response = await fetchImpl(`${baseUrl}/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      return { ok: false, detail: text.slice(0, 200) };
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export function paymentWasRecorded(payload: unknown): boolean {

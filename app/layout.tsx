@@ -13,8 +13,15 @@ const display = Syne({
 });
 
 export const metadata: Metadata = {
-  title: "Zilla Milestones by Zilla Labs",
-  description: "Turn a project scope into PayPal-invoiced milestones and reschedule work as payments land.",
+  title: "Zilla OS / Milestones",
+  description: "Get paid before the next phase starts. Zilla Milestones turns a scope into PayPal-invoiced phases on a Bryntum Gantt.",
+  applicationName: "Zilla OS",
+  openGraph: {
+    title: "Zilla OS / Milestones",
+    description: "Get paid before the next phase starts.",
+    siteName: "Zilla OS",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

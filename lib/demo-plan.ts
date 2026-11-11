@@ -47,7 +47,17 @@ export function cannedPlan(scope: string): Plan {
   };
 }
 
-export const SAMPLE_SCOPE = `Harbor & Pine commerce site
+export const HVAC_SCOPE = `HVAC booking portal
+
+Scope:
+- Discovery workshop, sitemap, and milestone brief
+- Visual design for booking, scheduling, and customer screens
+- Build the portal, including the booking flow and internal QA
+- Launch checklist, handoff, and a short support window
+
+Sequence design after discovery, build after design, and launch after build.`;
+
+export const HARBOR_SCOPE = `Harbor & Pine commerce site
 
 Scope:
 - Discovery workshop and sitemap
@@ -56,3 +66,22 @@ Scope:
 - Launch checklist, QA, and handoff
 
 Sequence design after discovery, build after design, and launch after build.`;
+
+export const SAMPLE_SCOPE = HVAC_SCOPE;
+
+export const SAMPLE_SCOPES = [
+  {
+    id: "hvac",
+    title: "HVAC booking portal",
+    budget: "18000",
+    email: "billing@example.com",
+    scope: HVAC_SCOPE,
+  },
+  {
+    id: "harbor",
+    title: "Harbor & Pine commerce site",
+    budget: "12000",
+    email: "billing@example.com",
+    scope: HARBOR_SCOPE,
+  },
+] as const;

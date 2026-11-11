@@ -1,0 +1,49 @@
+import { ImageResponse } from "next/og";
+
+export const alt = "Zilla OS / Milestones — Get paid before the next phase starts";
+export const size = { width: 1200, height: 630 };
+export const contentType = "image/png";
+
+export default function OpenGraphImage() {
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          background: "#07110e",
+          color: "white",
+          padding: "72px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <div
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: 18,
+              background: "#d6f26a",
+              color: "#07110e",
+              fontSize: 44,
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            Z
+          </div>
+          <div style={{ display: "flex", fontSize: 28, letterSpacing: 4, color: "#d6f26a" }}>ZILLA OS</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <div style={{ fontSize: 72, fontWeight: 700, lineHeight: 1.02 }}>Milestones</div>
+          <div style={{ fontSize: 36, color: "#d5dee6" }}>Get paid before the next phase starts</div>
+        </div>
+      </div>
+    ),
+    { ...size },
+  );
+}

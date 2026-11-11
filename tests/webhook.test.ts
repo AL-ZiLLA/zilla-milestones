@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Project } from "@/lib/types";
+import { WEBHOOK_PAID_TOAST, webhookVerifiedMessage } from "@/lib/actions";
 import {
   applyInvoiceEvent,
   processWebhook,
@@ -100,6 +101,11 @@ describe("PayPal webhook handler", () => {
     expect(result.project?.phases[0].paymentStatus).toBe("paid");
     expect(result.project?.phases[0].paidAt).toBe("2026-11-09");
     expect(result.project?.phases[1].blocked).toBe(false);
+  });
+
+  it("names the verified paid webhook for the live toast", () => {
+    expect(webhookVerifiedMessage({ event_type: "INVOICING.INVOICE.PAID" })).toBe(WEBHOOK_PAID_TOAST);
+    expect(webhookVerifiedMessage({ event_type: "INVOICING.INVOICE.CANCELLED" })).toBeNull();
   });
 
   it("marks a phase cancelled from INVOICING.INVOICE.CANCELLED", () => {

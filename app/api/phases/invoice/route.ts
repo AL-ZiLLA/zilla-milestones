@@ -3,6 +3,7 @@ import { errorResponse, mutateProject } from "@/lib/http";
 import { invoicePhase } from "@/lib/service";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const bodySchema = z.object({ phase: z.string().trim().min(1) });
 

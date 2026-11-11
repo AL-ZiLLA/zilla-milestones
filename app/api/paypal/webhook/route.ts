@@ -1,14 +1,23 @@
 import { NextResponse } from "next/server";
-import { todayUtc } from "@/lib/dates";
+import { appendEvent, webhookVerifiedMessage } from "@/lib/actions";
+import { asOfDate } from "@/lib/dates";
 import { errorResponse } from "@/lib/http";
 import { mockPaypalEnabled, paypalBaseUrl } from "@/lib/mode";
 import { applyOverdue } from "@/lib/overdue";
+import { composeOverdueDrafts } from "@/lib/compose";
 import { getPaypalAccessToken } from "@/lib/paypal";
 import { nid } from "@/lib/service";
-import { readProject, saveProject } from "@/lib/store";
-import { processWebhook, verifyPayPalWebhookSignature, type WebhookHeaders } from "@/lib/webhook";
+import { getStore } from "@/lib/store";
+import {
+  invoiceIdFromEvent,
+  processWebhook,
+  verifyPayPalWebhookSignature,
+  type InvoiceWebhookEvent,
+  type WebhookHeaders,
+} from "@/lib/webhook";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function headersFrom(request: Request): WebhookHeaders {
   return {
@@ -31,11 +40,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
     const headers = headersFrom(request);
+    const invoiceId =
+      event && typeof event === "object" ? invoiceIdFromEvent(event as InvoiceWebhookEvent) : undefined;
+    const located = invoiceId ? await getStore().findByInvoice(invoiceId) : null;
     const result = await processWebhook({
       event,
       headers,
-      project: readProject(),
-      asOf: todayUtc(),
+      project: located?.project ?? null,
+      asOf: located ? asOfDate(located.project) : asOfDate({}),
       verify: async (webhookHeaders, webhookEvent) => {
         if (mockPaypalEnabled()) return webhookHeaders.demoSignature === "demo";
         const accessToken = await getPaypalAccessToken();
@@ -48,9 +60,13 @@ export async function POST(request: Request) {
         });
       },
     });
-    if (result.project && result.body.updated) {
-      const checked = applyOverdue(result.project, todayUtc(), () => nid("draft"));
-      saveProject(checked.project);
+    if (result.project && result.body.updated && located) {
+      let next = result.project;
+      const toast = webhookVerifiedMessage(event);
+      if (toast) next = appendEvent(next, toast);
+      const checked = applyOverdue(next, asOfDate(next), () => nid("draft"));
+      const finalProject = checked.changed ? await composeOverdueDrafts(checked.project) : next;
+      await getStore().write(located.sessionId, finalProject);
     }
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {

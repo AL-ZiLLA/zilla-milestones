@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { GanttPanel } from "@/components/GanttPanel";
-import { SAMPLE_SCOPE } from "@/lib/demo-plan";
-import { formatMoney } from "@/lib/money";
+import { SAMPLE_SCOPE, SAMPLE_SCOPES } from "@/lib/demo-plan";
+import { formatMoney, summarizeMoney } from "@/lib/money";
 import { STATUS_LABEL } from "@/lib/status";
-import type { PaymentStatus, Project, RuntimeMode } from "@/lib/types";
+import type { AgentAction, PaymentStatus, Project, RuntimeMode } from "@/lib/types";
 
 interface ApiPayload {
   project: Project | null;
@@ -14,7 +14,20 @@ interface ApiPayload {
   error?: string;
 }
 
+interface Toast {
+  id: number;
+  text: string;
+  tone: "ok" | "err";
+}
+
 const SUGGESTIONS = ["What's unpaid?", "Invoice phase 1", "Push design back a week"];
+const PLAN_STEPS = [
+  "Reading the scope",
+  "Pricing each phase",
+  "Sequencing dependencies",
+  "Validating the plan schema",
+  "Laying out the Gantt",
+];
 
 async function postJson(url: string, body?: unknown): Promise<ApiPayload> {
   const response = await fetch(url, {
@@ -38,14 +51,27 @@ export function AppShell() {
   const [mode, setMode] = useState<RuntimeMode | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const [planStep, setPlanStep] = useState(0);
   const [selectedId, setSelectedId] = useState<string>("");
   const [scope, setScope] = useState(SAMPLE_SCOPE);
   const [clientEmail, setClientEmail] = useState("billing@example.com");
-  const [budget, setBudget] = useState("12000");
+  const [budget, setBudget] = useState("18000");
   const [pyusdNote, setPyusdNote] = useState(true);
   const [chatText, setChatText] = useState("");
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const seenEvents = useRef(new Set<string>());
+  const primed = useRef(false);
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+
+  function pushToast(text: string, tone: "ok" | "err" = "ok") {
+    const id = Date.now() + Math.random();
+    setToasts((items) => [...items, { id, text, tone }].slice(-4));
+    window.setTimeout(() => {
+      setToasts((items) => items.filter((item) => item.id !== id));
+    }, 6500);
+  }
 
   useEffect(() => {
     let dead = false;
@@ -58,7 +84,7 @@ export function AppShell() {
         setMode(payload.mode);
         setSelectedId(payload.project?.phases[0]?.id ?? "");
       } catch (loadError) {
-        if (!dead) setError(loadError instanceof Error ? loadError.message : "Could not load the plan");
+        if (!dead) pushToast(loadError instanceof Error ? loadError.message : "Could not load the plan", "err");
       } finally {
         if (!dead) setLoading(false);
       }
@@ -67,6 +93,52 @@ export function AppShell() {
       dead = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!planning) return;
+    const timer = window.setInterval(() => setPlanStep((step) => (step + 1) % PLAN_STEPS.length), 700);
+    return () => window.clearInterval(timer);
+  }, [planning]);
+
+  useEffect(() => {
+    if (!project) return;
+    const events = project.events ?? [];
+    if (!primed.current) {
+      for (const event of events) seenEvents.current.add(event.id);
+      primed.current = true;
+      return;
+    }
+    for (const event of events) {
+      if (seenEvents.current.has(event.id)) continue;
+      seenEvents.current.add(event.id);
+      pushToast(event.message, "ok");
+    }
+  }, [project]);
+
+  const projectId = project?.id ?? "";
+  useEffect(() => {
+    if (!projectId) return;
+    const timer = window.setInterval(() => {
+      if (document.hidden || busyRef.current) return;
+      void (async () => {
+        try {
+          const response = await fetch("/api/project");
+          const payload = (await response.json()) as ApiPayload;
+          if (payload.mode) setMode(payload.mode);
+          setProject((current) => {
+            if (!payload.project) return current;
+            if (!current) return payload.project;
+            const eventsChanged = (payload.project.events?.length ?? 0) !== (current.events?.length ?? 0);
+            if (payload.project.updatedAt !== current.updatedAt || eventsChanged) return payload.project;
+            return current;
+          });
+        } catch {
+          // The next poll retries. A dropped tick should not cover the schedule.
+        }
+      })();
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [projectId]);
 
   useEffect(() => {
     if (!project) return;
@@ -80,17 +152,17 @@ export function AppShell() {
     () => project?.drafts.filter((draft) => draft.status === "pending_approval") ?? [],
     [project],
   );
+  const money = project ? summarizeMoney(project) : null;
 
   async function run(task: () => Promise<ApiPayload>) {
     setBusy(true);
-    setError(null);
     try {
       const payload = await task();
       setProject(payload.project);
       if (payload.mode) setMode(payload.mode);
-      setNotice(payload.message ?? null);
+      if (payload.message) pushToast(payload.message, "ok");
     } catch (taskError) {
-      setError(taskError instanceof Error ? taskError.message : "Something went wrong");
+      pushToast(taskError instanceof Error ? taskError.message : "Something went wrong", "err");
     } finally {
       setBusy(false);
     }
@@ -100,17 +172,30 @@ export function AppShell() {
     event.preventDefault();
     const amount = Number(budget);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setError("Enter a budget greater than zero.");
+      pushToast("Enter a budget greater than zero.", "err");
       return;
     }
-    await run(() =>
-      postJson("/api/project", {
+    setPlanning(true);
+    setPlanStep(0);
+    const started = Date.now();
+    try {
+      const payload = await postJson("/api/project", {
         scope,
         clientEmail,
         budget: amount,
         pyusdNote,
-      }),
-    );
+      });
+      const wait = Math.max(0, 2400 - (Date.now() - started));
+      await new Promise((resolve) => window.setTimeout(resolve, wait));
+      setProject(payload.project);
+      if (payload.mode) setMode(payload.mode);
+      setSelectedId(payload.project?.phases[0]?.id ?? "");
+      if (payload.message) pushToast(payload.message, "ok");
+    } catch (taskError) {
+      pushToast(taskError instanceof Error ? taskError.message : "Something went wrong", "err");
+    } finally {
+      setPlanning(false);
+    }
   }
 
   async function sendChat(text: string) {
@@ -120,29 +205,26 @@ export function AppShell() {
     await run(() => postJson("/api/chat", { message }));
   }
 
-  if (loading) {
-    return (
-      <main className="grid min-h-screen place-items-center text-sm text-zinc-300">
-        Loading Zilla Milestones
-      </main>
-    );
-  }
-
   return (
-    <main className="mx-auto flex min-h-screen max-w-[1440px] flex-col px-4 py-5 md:px-6">
-      <header className="mb-5 flex flex-wrap items-end justify-between gap-4">
+    <main className="mx-auto flex min-h-dvh flex-col px-3 py-3 md:px-5 lg:h-dvh lg:overflow-hidden">
+      <header className="mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-lime text-ink">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-lime text-ink">
             <span className="font-display text-2xl font-bold">Z</span>
           </div>
           <div>
-            <p className="font-display text-2xl font-semibold tracking-tight text-white">
-              Zilla Milestones
+            <p className="font-display text-xl font-semibold tracking-tight text-white md:text-2xl">
+              Zilla OS <span className="text-zinc-500">/</span> Milestones module
             </p>
-            <p className="text-sm text-zinc-400">by Zilla Labs</p>
+            <p className="text-sm text-lime">Get paid before the next phase starts</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          {project?.clockDate ? (
+            <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1 text-amber-100">
+              Demo clock {project.clockDate}
+            </span>
+          ) : null}
           {mode ? (
             <span className="rounded-full border border-line px-3 py-1 text-lime">{modeLabel(mode)}</span>
           ) : null}
@@ -150,29 +232,37 @@ export function AppShell() {
         </div>
       </header>
 
-      {error ? (
-        <p className="mb-4 rounded-xl border border-red-400/40 bg-red-950/40 px-4 py-3 text-sm text-red-100" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {notice ? (
-        <p className="mb-4 rounded-xl border border-lime/30 bg-lime/10 px-4 py-3 text-sm text-lime" role="status">
-          {notice}
-        </p>
-      ) : null}
-
-      {!project ? (
-        <section className="panel mx-auto w-full max-w-3xl rounded-3xl p-6 md:p-8">
-          <h1 className="font-display text-3xl text-white">Turn a scope into paid milestones</h1>
+      {loading ? (
+        <p className="grid flex-1 place-items-center text-sm text-zinc-300">Loading Zilla OS</p>
+      ) : !project ? (
+        <section className="panel mx-auto w-full max-w-3xl overflow-auto rounded-3xl p-6 md:p-8">
+          <h1 className="font-display text-3xl text-white">Get paid before the next phase starts</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
-            Paste the work, a billing email, and a budget. The agent splits it into phases, the Bryntum Gantt
-            shows payment status, and PayPal sandbox invoices unlock the next bar when they are paid.
+            Paste a scope, a billing email, and a budget. Grok splits the work into payment-gated phases on a Bryntum
+            Gantt. PayPal invoices unlock the next phase.
           </p>
-          <form className="mt-6 space-y-4" onSubmit={createPlan}>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {SAMPLE_SCOPES.map((sample) => (
+              <button
+                key={sample.id}
+                type="button"
+                className="rounded-2xl border border-line bg-ink/60 px-4 py-3 text-left text-sm hover:border-lime/50"
+                onClick={() => {
+                  setScope(sample.scope);
+                  setBudget(sample.budget);
+                  setClientEmail(sample.email);
+                }}
+              >
+                <span className="block font-medium text-white">{sample.title}</span>
+                <span className="text-zinc-400">{formatMoney(Number(sample.budget))}</span>
+              </button>
+            ))}
+          </div>
+          <form className="mt-5 space-y-4" onSubmit={createPlan}>
             <label className="block text-sm text-zinc-300">
               Project scope
               <textarea
-                className="mt-2 h-48 w-full rounded-2xl border border-line bg-ink px-4 py-3 text-sm text-white outline-none ring-lime/40 focus:ring"
+                className="mt-2 h-40 w-full rounded-2xl border border-line bg-ink px-4 py-3 text-sm text-white outline-none ring-lime/40 focus:ring"
                 value={scope}
                 onChange={(event) => setScope(event.target.value)}
                 required
@@ -209,164 +299,151 @@ export function AppShell() {
                 checked={pyusdNote}
                 onChange={(event) => setPyusdNote(event.target.checked)}
               />
-              <span>
-                Note PYUSD as a payment option on invoices. This adds a PayPal USD note for wallets that support it.
-                Settlement stays on the PayPal invoice.
-              </span>
+              <span>Note PYUSD as a payment option on invoices. Settlement stays on the PayPal invoice.</span>
             </label>
-            <div className="flex flex-wrap gap-3">
+            {planning ? (
+              <ol className="space-y-2 rounded-2xl border border-lime/30 bg-ink/70 p-4" aria-live="polite">
+                <li className="font-display text-lg text-white">Grok is planning</li>
+                {PLAN_STEPS.map((step, index) => (
+                  <li key={step} className={`text-sm ${index === planStep ? "plan-step-active text-lime" : "text-zinc-400"}`}>
+                    {index === planStep ? "●" : "○"} {step}
+                  </li>
+                ))}
+              </ol>
+            ) : (
               <button
                 type="submit"
-                disabled={busy}
-                className="rounded-full bg-lime px-5 py-2.5 text-sm font-semibold text-ink disabled:opacity-50"
+                className="rounded-full bg-lime px-5 py-2.5 text-sm font-semibold text-ink"
               >
-                {busy ? "Planning..." : "Build milestone plan"}
+                Build milestone plan
               </button>
-              <button
-                type="button"
-                className="rounded-full border border-line px-5 py-2.5 text-sm text-zinc-200"
-                onClick={() => {
-                  setScope(SAMPLE_SCOPE);
-                  setClientEmail("billing@example.com");
-                  setBudget("12000");
-                }}
-              >
-                Use sample scope
-              </button>
-            </div>
+            )}
           </form>
         </section>
       ) : (
-        <section className="grid flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+        <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="flex min-h-0 flex-col gap-3 overflow-auto lg:overflow-hidden">
+            <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
               <div>
-                <h1 className="font-display text-3xl text-white">{project.name}</h1>
+                <h1 className="font-display text-2xl text-white md:text-3xl">{project.name}</h1>
                 <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-300">{project.summary}</p>
-                <p className="mt-2 text-xs uppercase tracking-[0.14em] text-zinc-500">
-                  {formatMoney(project.budget)} · {project.clientEmail}
-                  {project.pyusdNote ? " · PYUSD note on invoices" : ""}
-                </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  className="rounded-full border border-line px-4 py-2 text-sm text-zinc-100 disabled:opacity-50"
-                  onClick={() => run(() => postJson("/api/phases/sync", {}))}
-                >
-                  Sync status
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  className="rounded-full border border-line px-4 py-2 text-sm text-zinc-100 disabled:opacity-50"
-                  onClick={() => run(() => postJson("/api/phases/overdue", { simulate: false }))}
-                >
-                  Check overdue
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-line px-4 py-2 text-sm text-zinc-400"
-                  onClick={() => {
-                    if (!window.confirm("Clear this plan and start over?")) return;
-                    void run(async () => {
-                      const response = await fetch("/api/project", { method: "DELETE" });
-                      return (await response.json()) as ApiPayload;
-                    });
-                  }}
-                >
-                  New plan
-                </button>
-              </div>
+              <button
+                type="button"
+                className="rounded-full border border-line px-4 py-2 text-sm text-zinc-300"
+                onClick={() => {
+                  if (!window.confirm("Clear this plan and start over?")) return;
+                  void run(async () => {
+                    const response = await fetch("/api/project", { method: "DELETE" });
+                    const payload = (await response.json()) as ApiPayload;
+                    setSelectedId("");
+                    return payload;
+                  });
+                }}
+              >
+                New plan
+              </button>
             </div>
 
-            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-lime">Bryntum Gantt</p>
-            <GanttPanel
-              key={project.id}
-              projectName={project.name}
-              phases={project.phases}
-              onSelect={setSelectedId}
-            />
+            {money ? (
+              <div className="grid shrink-0 grid-cols-2 gap-2 xl:grid-cols-4" data-testid="money-bar">
+                <MoneyCell label="Contract" value={formatMoney(money.contract)} />
+                <MoneyCell label="Paid" value={formatMoney(money.paid)} tone="paid" />
+                <MoneyCell label="Invoiced" value={formatMoney(money.invoiced)} tone="invoiced" />
+                <MoneyCell label="At risk" value={formatMoney(money.atRisk)} tone="overdue" />
+              </div>
+            ) : null}
+
+            <div className="flex shrink-0 gap-2 overflow-x-auto pb-1">
+              {project.phases.map((phase, index) => (
+                <button
+                  key={phase.id}
+                  type="button"
+                  onClick={() => setSelectedId(phase.id)}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs ${
+                    phase.id === selected?.id ? "border-lime text-lime" : "border-line text-zinc-300"
+                  }`}
+                >
+                  {index + 1}. {phase.name}
+                  {phase.blocked ? " 🔒" : ""}
+                </button>
+              ))}
+            </div>
+
+            <div className="min-h-[320px] flex-1 lg:min-h-0">
+              <p className="mb-1 text-[11px] uppercase tracking-[0.16em] text-lime">
+                Bryntum Gantt · payment gates are diamonds · padlock means locked until paid
+              </p>
+              <div className="h-[420px] lg:h-[calc(100%-1.25rem)]">
+                <GanttPanel key={project.id} phases={project.phases} onSelect={setSelectedId} />
+              </div>
+            </div>
 
             {selected ? (
               <PhaseCard
                 index={project.phases.findIndex((phase) => phase.id === selected.id) + 1}
                 phase={selected}
                 busy={busy}
+                demoPaypal={Boolean(mode?.demoPaypal)}
+                clockDate={project.clockDate}
                 onInvoice={() => run(() => postJson("/api/phases/invoice", { phase: selected.id }))}
                 onSync={() => run(() => postJson("/api/phases/sync", { phase: selected.id }))}
                 onPay={() => run(() => postJson("/api/phases/simulate-payment", { phase: selected.id }))}
-                onOverdue={() =>
+                onFastForward={() =>
                   run(() => postJson("/api/phases/overdue", { phase: selected.id, simulate: true }))
                 }
+                onCheck={() => run(() => postJson("/api/phases/overdue", { simulate: false }))}
               />
-            ) : null}
-
-            <ol className="grid gap-2 md:hidden">
-              {project.phases.map((phase, index) => (
-                <li key={phase.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(phase.id)}
-                    className="flex w-full items-center justify-between rounded-2xl border border-line bg-panel px-4 py-3 text-left text-sm"
-                  >
-                    <span>
-                      {index + 1}. {phase.name}
-                    </span>
-                    <StatusText status={phase.paymentStatus} />
-                  </button>
-                </li>
-              ))}
-            </ol>
-
-            {pendingDrafts.length > 0 ? (
-              <div className="space-y-3">
-                <h2 className="font-display text-xl text-white">Client updates awaiting approval</h2>
-                <p className="text-sm text-zinc-400">
-                  These drafts are never sent automatically. Approve keeps a copy here. Discard throws it away.
-                </p>
-                {pendingDrafts.map((draft) => (
-                  <article key={draft.id} className="panel rounded-2xl p-4">
-                    <h3 className="text-sm font-semibold text-white">{draft.subject}</h3>
-                    <pre className="mt-3 whitespace-pre-wrap font-sans text-sm leading-6 text-zinc-300">
-                      {draft.body}
-                    </pre>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        className="rounded-full bg-lime px-4 py-2 text-sm font-semibold text-ink disabled:opacity-50"
-                        onClick={() =>
-                          run(async () => {
-                            await navigator.clipboard.writeText(`${draft.subject}\n\n${draft.body}`);
-                            return postJson("/api/drafts", { draftId: draft.id, action: "approved" });
-                          })
-                        }
-                      >
-                        Approve and copy
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        className="rounded-full border border-line px-4 py-2 text-sm text-zinc-200 disabled:opacity-50"
-                        onClick={() => run(() => postJson("/api/drafts", { draftId: draft.id, action: "discarded" }))}
-                      >
-                        Discard
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
             ) : null}
           </div>
 
-          <aside className="panel flex h-[calc(100vh-8rem)] min-h-[640px] flex-col rounded-3xl">
-            <div className="border-b border-line px-4 py-4">
-              <h2 className="font-display text-xl text-white">Agent</h2>
-              <p className="text-xs text-zinc-400">Ask it to invoice, shift, or explain what is unpaid.</p>
+          <aside className="panel flex min-h-[520px] flex-col rounded-3xl lg:min-h-0">
+            {pendingDrafts.map((draft) => (
+              <article key={draft.id} className="border-b border-line px-4 py-3" data-testid="approval-card">
+                <p className="text-xs uppercase tracking-[0.16em] text-lime">Approval required</p>
+                <h2 className="mt-1 font-display text-lg text-white">{draft.subject}</h2>
+                <p className="mt-1 text-xs text-zinc-400">
+                  Approve sends this note as a PayPal invoice reminder. Discard sends nothing.
+                </p>
+                <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap font-sans text-sm leading-6 text-zinc-200">
+                  {draft.body}
+                </pre>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="rounded-full bg-lime px-4 py-2 text-sm font-semibold text-ink disabled:opacity-50"
+                    onClick={() => run(() => postJson("/api/drafts", { draftId: draft.id, action: "approved" }))}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="rounded-full border border-line px-4 py-2 text-sm text-zinc-200 disabled:opacity-50"
+                    onClick={() => run(() => postJson("/api/drafts", { draftId: draft.id, action: "discarded" }))}
+                  >
+                    Discard
+                  </button>
+                </div>
+              </article>
+            ))}
+            <div className="border-b border-line px-4 py-3">
+              <h2 className="font-display text-lg text-white">Agent actions</h2>
+              <p className="text-xs text-zinc-400">Each tool call, in order, with the PayPal API, status, and latency.</p>
             </div>
-            <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+            <ol className="max-h-64 space-y-2 overflow-y-auto px-4 py-3 lg:max-h-[40%]" data-testid="agent-actions">
+              {(project.actions ?? []).length === 0 ? (
+                <li className="text-sm text-zinc-500">No tool calls yet. Invoice a phase to start the trail.</li>
+              ) : (
+                (project.actions ?? []).map((action) => <ActionRow key={action.id} action={action} />)
+              )}
+            </ol>
+            <div className="border-b border-t border-line px-4 py-3">
+              <h2 className="font-display text-lg text-white">Agent</h2>
+              <p className="text-xs text-zinc-400">Ask what is unpaid, or to invoice or move a phase.</p>
+            </div>
+            <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
               {project.messages.map((message, index) => (
                 <p
                   key={`${message.at}-${index}`}
@@ -378,7 +455,7 @@ export function AppShell() {
                 </p>
               ))}
             </div>
-            <div className="space-y-2 border-t border-line p-4">
+            <div className="space-y-2 border-t border-line p-3">
               <div className="flex flex-wrap gap-2">
                 {SUGGESTIONS.map((suggestion) => (
                   <button
@@ -401,7 +478,7 @@ export function AppShell() {
               >
                 <input
                   className="min-w-0 flex-1 rounded-full border border-line bg-ink px-4 py-2 text-sm text-white outline-none ring-lime/40 focus:ring"
-                  placeholder="Invoice phase 2"
+                  placeholder="What's unpaid?"
                   value={chatText}
                   onChange={(event) => setChatText(event.target.value)}
                 />
@@ -417,14 +494,57 @@ export function AppShell() {
           </aside>
         </section>
       )}
+      <div className="toast-stack" aria-live="polite">
+        {toasts.map((toast) => (
+          <p
+            key={toast.id}
+            role="status"
+            className={`rounded-2xl border px-4 py-3 text-sm shadow-card ${
+              toast.tone === "err"
+                ? "border-red-400/40 bg-red-950/90 text-red-100"
+                : "border-lime/40 bg-[#102018]/95 text-lime"
+            }`}
+          >
+            {toast.text}
+          </p>
+        ))}
+      </div>
     </main>
+  );
+}
+
+function MoneyCell({ label, value, tone }: { label: string; value: string; tone?: PaymentStatus }) {
+  const color =
+    tone === "paid" ? "text-[#9ff0cb]" : tone === "invoiced" ? "text-[#f3d48a]" : tone === "overdue" ? "text-[#ffb4b4]" : "text-white";
+  return (
+    <div className="money-card">
+      <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">{label}</p>
+      <p className={`font-display text-xl ${color}`}>{value}</p>
+    </div>
+  );
+}
+
+function ActionRow({ action }: { action: AgentAction }) {
+  return (
+    <li className="rounded-xl border border-line bg-ink/70 px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-xs text-lime">{action.tool}</span>
+        <span className={`text-[11px] uppercase ${action.status === "ok" ? "text-[#9ff0cb]" : "text-[#ffb4b4]"}`}>
+          {action.status}
+        </span>
+      </div>
+      <p className="mt-1 text-[11px] text-zinc-400">
+        {action.paypalApi ?? "Zilla schedule"} · {action.latencyMs < 1 ? "<1 ms" : `${action.latencyMs} ms`}
+      </p>
+      {action.detail ? <p className="mt-1 truncate text-[11px] text-zinc-500">{action.detail}</p> : null}
+    </li>
   );
 }
 
 function Legend() {
   const items: PaymentStatus[] = ["draft", "invoiced", "paid", "overdue"];
   return (
-    <div className="flex flex-wrap gap-3 text-zinc-300">
+    <div className="hidden flex-wrap gap-3 text-zinc-300 xl:flex">
       {items.map((status) => (
         <span key={status} className="inline-flex items-center gap-1.5">
           <i className={`dot dot-${status}`} />
@@ -448,45 +568,55 @@ function PhaseCard({
   index,
   phase,
   busy,
+  demoPaypal,
+  clockDate,
   onInvoice,
   onSync,
   onPay,
-  onOverdue,
+  onFastForward,
+  onCheck,
 }: {
   index: number;
   phase: Project["phases"][number];
   busy: boolean;
+  demoPaypal: boolean;
+  clockDate?: string | null;
   onInvoice: () => void;
   onSync: () => void;
   onPay: () => void;
-  onOverdue: () => void;
+  onFastForward: () => void;
+  onCheck: () => void;
 }) {
   const canInvoice = !phase.blocked && (phase.paymentStatus === "draft" || phase.paymentStatus === "cancelled");
-  const canPay = Boolean(phase.paypalInvoiceId) && phase.paymentStatus !== "paid" && phase.paymentStatus !== "draft" && phase.paymentStatus !== "cancelled";
-  const canOverdue = phase.paymentStatus === "invoiced" || phase.paymentStatus === "overdue";
+  const canPay =
+    Boolean(phase.paypalInvoiceId) &&
+    phase.paymentStatus !== "paid" &&
+    phase.paymentStatus !== "draft" &&
+    phase.paymentStatus !== "cancelled";
+  const canForward = phase.paymentStatus === "invoiced" || phase.paymentStatus === "overdue";
   return (
-    <div className="panel rounded-2xl p-4">
+    <div className="panel shrink-0 rounded-2xl p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Phase {index}</p>
-          <h2 className="font-display text-2xl text-white">{phase.name}</h2>
-          <p className="mt-1 text-sm text-zinc-300">{phase.description}</p>
+          <h2 className="font-display text-xl text-white">{phase.name}</h2>
+          <p className="mt-1 line-clamp-1 text-sm text-zinc-300">{phase.description}</p>
         </div>
         <StatusText status={phase.paymentStatus} />
       </div>
-      <dl className="mt-4 grid gap-3 text-sm text-zinc-300 sm:grid-cols-4">
+      <dl className="mt-2 grid gap-2 text-sm text-zinc-300 sm:grid-cols-4">
         <div>
           <dt className="text-xs uppercase tracking-wide text-zinc-500">Amount</dt>
           <dd>{formatMoney(phase.amount)}</dd>
         </div>
         <div>
-          <dt className="text-xs uppercase tracking-wide text-zinc-500">Dates</dt>
+          <dt className="text-xs uppercase tracking-wide text-zinc-500">Schedule</dt>
           <dd>
             {phase.startDate} to {phase.endDate}
           </dd>
         </div>
         <div>
-          <dt className="text-xs uppercase tracking-wide text-zinc-500">Due</dt>
+          <dt className="text-xs uppercase tracking-wide text-zinc-500">{phase.invoiceDate ? "Due (Net 7)" : "Due"}</dt>
           <dd>{phase.dueDate}</dd>
         </div>
         <div>
@@ -495,9 +625,9 @@ function PhaseCard({
         </div>
       </dl>
       {phase.blocked ? (
-        <p className="mt-3 text-sm text-amber-200">Blocked until the previous milestone is paid.</p>
+        <p className="mt-3 text-sm text-amber-200">Locked until the previous phase is paid.</p>
       ) : null}
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
           disabled={busy || !canInvoice}
@@ -506,31 +636,62 @@ function PhaseCard({
         >
           Invoice phase
         </button>
+        {phase.paypalPayerUrl ? (
+          <a
+            className="rounded-full border border-lime/40 px-4 py-2 text-sm text-lime"
+            href={phase.paypalPayerUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open PayPal invoice
+          </a>
+        ) : null}
         <button
           type="button"
           disabled={busy || !phase.paypalInvoiceId}
           className="rounded-full border border-line px-4 py-2 text-sm disabled:opacity-40"
           onClick={onSync}
         >
-          Sync status
-        </button>
-        <button
-          type="button"
-          disabled={busy || !canPay}
-          className="rounded-full border border-line px-4 py-2 text-sm disabled:opacity-40"
-          onClick={onPay}
-        >
-          Simulate payment
-        </button>
-        <button
-          type="button"
-          disabled={busy || !canOverdue}
-          className="rounded-full border border-line px-4 py-2 text-sm disabled:opacity-40"
-          onClick={onOverdue}
-        >
-          Simulate overdue
+          Sync from PayPal
         </button>
       </div>
+      {demoPaypal && phase.paypalInvoiceId ? (
+        <p className="mt-2 text-xs text-zinc-500">Demo mode uses a mock invoice id, so PayPal will not open a payable invoice.</p>
+      ) : null}
+      <details className="demo-drawer mt-3 rounded-2xl border border-line bg-ink/50 px-3 py-2" data-testid="demo-controls">
+        <summary className="text-sm text-zinc-300">Demo controls</summary>
+        <p className="mt-2 text-xs text-zinc-500">
+          {clockDate
+            ? `Demo clock is ${clockDate}. Fast-forward moves it 7 days past the Net-7 due date. It does not backdate the invoice.`
+            : "The clock follows America/Los_Angeles until you fast-forward. Simulate stays off the main path."}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy || !canPay}
+            className="rounded-full border border-line px-4 py-2 text-sm disabled:opacity-40"
+            onClick={onPay}
+          >
+            Simulate payment
+          </button>
+          <button
+            type="button"
+            disabled={busy || !canForward}
+            className="rounded-full border border-line px-4 py-2 text-sm disabled:opacity-40"
+            onClick={onFastForward}
+          >
+            Fast-forward past due
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            className="rounded-full border border-line px-4 py-2 text-sm disabled:opacity-40"
+            onClick={onCheck}
+          >
+            Check overdue
+          </button>
+        </div>
+      </details>
     </div>
   );
 }

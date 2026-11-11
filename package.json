@@ -12,7 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@bryntum/gantt": "npm:@bryntum/gantt-trial@7.3.8",
+    "@bryntum/core-community": "8.0.0",
+    "@bryntum/gantt-community": "8.0.0",
     "@paypal/agent-toolkit": "1.11.0",
     "next": "15.5.29",
     "react": "19.1.1",
@@ -33,8 +34,7 @@
     "vitest": "3.2.4"
   },
   "allowScripts": {
-    "@bryntum/gantt-trial@7.3.8": true,
-    "@bryntum/gantt-trial-lib@1.0.1": true,
+    "@bryntum/gantt-community@8.0.0": true,
     "esbuild@0.28.2": true
   }
 }

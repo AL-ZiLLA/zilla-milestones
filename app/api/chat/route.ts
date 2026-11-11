@@ -3,6 +3,7 @@ import { chatWithProject } from "@/lib/agent";
 import { errorResponse, mutateProject } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const bodySchema = z.object({
   message: z.string().trim().min(1).max(2000),

@@ -7,7 +7,8 @@ const nextConfig: NextConfig = {
     "@paypal/paypal-server-sdk",
     "openai",
   ],
-  transpilePackages: ["@bryntum/gantt"],
+  // Do not add @bryntum/* to transpilePackages. SWC turns `static defaults = {}`
+  // into an assignment, and that throws on the inherited getter-only `defaults`.
 };
 
 export default nextConfig;
