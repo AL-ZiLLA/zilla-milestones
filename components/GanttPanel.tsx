@@ -5,10 +5,10 @@ import "@bryntum/core-community/fontawesome/css/fontawesome.css";
 import "@bryntum/core-community/fontawesome/css/solid.css";
 import "@bryntum/gantt-community/gantt.css";
 import "@bryntum/gantt-community/stockholm-dark.css";
-import { addDays, daysBetween, formatGanttDate, formatShortDate } from "@/lib/dates";
+import { daysBetween, formatGanttDate, formatShortDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import { paymentProgress, STATUS_LABEL } from "@/lib/status";
-import { timelineHeader, timelineTickSize } from "@/lib/timeline";
+import { timelineHeader, timelineRange, timelineTickSize } from "@/lib/timeline";
 import type { PaymentStatus, Phase } from "@/lib/types";
 
 interface GanttLike {
@@ -21,6 +21,9 @@ interface GanttLike {
   columns?: { getAt: (index: number) => { width: number; minWidth?: number } | undefined };
   subGrids?: { locked?: { width: number } };
   _zillaHeader?: string;
+  _zillaFitRange?: string;
+  _zillaFitWidth?: number;
+  _zillaFitTick?: number;
 }
 
 interface BryntumModule {
@@ -208,17 +211,61 @@ function frame(chart: GanttLike, phases: Phase[], host: HTMLElement) {
   const start = phases.map((phase) => phase.startDate).sort()[0];
   const end = phases.map((phase) => phase.endDate).sort().at(-1);
   if (!start || !end) return;
-  const startDate = addDays(start, -2);
-  const endDate = addDays(end, 7);
-  const timeline = Math.max(140, host.clientWidth - layout.locked - 8);
-  const tick = timelineTickSize(timeline, daysBetween(startDate, endDate));
+  const { startDate, endDate } = timelineRange(start, end);
+  const axis = host.querySelector(".b-grid-sub-grid-normal");
+  const measured = axis?.clientWidth ?? 0;
+  const available = measured > 0 ? measured : Math.max(140, host.clientWidth - layout.locked - 8);
+  const timeline = Math.max(80, available - 16);
+  const rangeKey = `${startDate}|${endDate}`;
+  let tick = timelineTickSize(timeline, daysBetween(startDate, endDate));
+  const sameRange = chart._zillaFitRange === rangeKey && chart._zillaFitTick;
+  const widthGrew = timeline > (chart._zillaFitWidth ?? 0) + 24;
+  if (sameRange && !widthGrew) tick = Math.min(tick, chart._zillaFitTick ?? tick);
+  applySpan(chart, tick, startDate, endDate);
+  chart._zillaFitRange = rangeKey;
+  chart._zillaFitWidth = timeline;
+  chart._zillaFitTick = tick;
+  tightenSpan(chart, host, startDate, endDate, rangeKey, 0);
+}
+
+function tightenSpan(
+  chart: GanttLike,
+  host: HTMLElement,
+  startDate: string,
+  endDate: string,
+  rangeKey: string,
+  attempt: number,
+) {
+  requestAnimationFrame(() => {
+    if (chart._zillaFitRange !== rangeKey || attempt > 6) return;
+    if (!axisOverflows(host)) return;
+    const current = chart._zillaFitTick ?? 1;
+    const next = Math.max(1, Math.floor(current * 0.9));
+    if (next === current) return;
+    chart._zillaFitTick = next;
+    applySpan(chart, next, startDate, endDate);
+    tightenSpan(chart, host, startDate, endDate, rangeKey, attempt + 1);
+  });
+}
+
+function applySpan(chart: GanttLike, tick: number, startDate: string, endDate: string) {
   const header = timelineHeader(tick);
   if (chart._zillaHeader !== header.id) {
     chart.viewPreset = header;
     chart._zillaHeader = header.id;
   }
+  chart.setTimeSpan?.(new Date(`${startDate}T00:00:00`), new Date(`${endDate}T00:00:00`));
   chart.tickSize = tick;
-  chart.setTimeSpan(new Date(`${startDate}T00:00:00`), new Date(`${endDate}T00:00:00`));
+}
+
+function axisOverflows(host: HTMLElement): boolean {
+  const axis = host.querySelector(".b-grid-sub-grid-normal");
+  if (!axis) return false;
+  const edge = axis.getBoundingClientRect().right - 1;
+  const past = (node: Element) => node.getBoundingClientRect().right > edge;
+  const bars = [...host.querySelectorAll(".b-gantt-task, .b-sch-event, .b-gantt-task-wrap")].some(past);
+  const headers = [...host.querySelectorAll(".b-grid-header-scroller-normal .b-sch-header-time-axis-cell")].some(past);
+  return bars || headers;
 }
 
 export function GanttPanel({
@@ -282,6 +329,7 @@ export function GanttPanel({
         }
         chart = new mod.Gantt({
           appendTo: host,
+          forceFit: true,
           rowHeight: 40,
           barMargin: 6,
           viewPreset: timelineHeader(120),

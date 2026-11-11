@@ -252,9 +252,9 @@ export function AppShell() {
 
   return (
     <main className="zilla-app mx-auto flex min-h-dvh flex-col px-3 py-3 md:px-4 lg:h-dvh lg:overflow-hidden">
-      <header className="zilla-header mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3">
+      <header className="zilla-header mb-3 grid shrink-0 items-center gap-3 md:grid-cols-[auto_minmax(0,1fr)_auto]">
         <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-lime text-ink">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-lime text-ink">
             <span className="font-display text-2xl font-bold">Z</span>
           </div>
           <div>
@@ -264,7 +264,22 @@ export function AppShell() {
             <p className="text-sm text-lime">Get paid before the next phase starts</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+        <div className="toast-stack" data-testid="toast-stack" aria-live="polite">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              role="status"
+              className={`toast-card rounded-2xl border px-3 py-1.5 text-[13px] leading-tight shadow-card ${
+                toast.tone === "err"
+                  ? "border-red-400/40 bg-red-950/90 text-red-100"
+                  : "border-lime/40 bg-[#102018]/95 text-lime"
+              }`}
+            >
+              <RichText text={toast.text} />
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
           {project?.clockDate ? (
             <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1 text-amber-100">
               Demo clock {project.clockDate}
@@ -380,7 +395,7 @@ export function AppShell() {
           <div className="plan-column flex min-h-0 flex-col gap-3 overflow-auto lg:overflow-hidden">
             <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <h1 className="font-display text-xl text-white md:text-2xl">{project.name}</h1>
+                <h1 className="font-display text-xl text-white md:text-2xl" data-testid="plan-title">{project.name}</h1>
                 <p className="project-summary mt-1 line-clamp-1 max-w-3xl text-sm leading-6 text-zinc-300">{project.summary}</p>
               </div>
               <button
@@ -586,21 +601,6 @@ export function AppShell() {
           </div>
         </div>
       ) : null}
-      <div className="toast-stack" aria-live="polite">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            role="status"
-            className={`toast-card rounded-2xl border px-4 py-3 text-sm shadow-card ${
-              toast.tone === "err"
-                ? "border-red-400/40 bg-red-950/90 text-red-100"
-                : "border-lime/40 bg-[#102018]/95 text-lime"
-            }`}
-          >
-            <RichText text={toast.text} />
-          </div>
-        ))}
-      </div>
     </main>
   );
 }

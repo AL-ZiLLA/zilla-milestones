@@ -197,9 +197,21 @@ body {
   display: none;
 }
 
-.zilla-gantt .b-sch-header-timeaxis-cell,
+.zilla-gantt .b-sch-header-time-axis-cell,
 .zilla-gantt .b-sch-header-row-cell {
   overflow: hidden;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.zilla-gantt .b-sch-header-text {
+  font-size: 11px !important;
+  letter-spacing: 0;
+}
+
+/* The closing week tick meets the timeline edge, so nudge its label fully inside. */
+.zilla-gantt .b-sch-header-row-1 .b-sch-header-time-axis-cell:last-child .b-sch-header-text {
+  transform: translateX(-4px);
 }
 
 .zilla-gantt .b-icon-tree-leaf {
@@ -223,14 +235,9 @@ body {
 }
 
 .toast-stack {
-  position: fixed;
-  top: 64px;
-  left: 16px;
-  z-index: 30;
-  display: flex;
-  width: min(18rem, calc(100vw - 380px));
-  flex-direction: column;
-  gap: 8px;
+  min-width: 0;
+  max-height: 52px;
+  overflow: hidden;
   pointer-events: none;
 }
 
