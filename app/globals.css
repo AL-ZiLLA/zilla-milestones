@@ -206,16 +206,76 @@ body {
   display: none;
 }
 
+.zilla-gantt .b-tree-cell-inner,
+.zilla-gantt .b-tree-cell-value,
+.zilla-gantt .b-grid-cell {
+  white-space: nowrap;
+}
+
+.zilla-gantt .b-grid-header,
+.zilla-gantt .b-grid-cell {
+  padding-left: 8px !important;
+  padding-right: 6px !important;
+}
+
+.zilla-gantt .b-sort-icon {
+  display: none;
+}
+
 .toast-stack {
   position: fixed;
-  top: 84px;
-  right: 16px;
-  z-index: 40;
+  top: 64px;
+  left: 16px;
+  z-index: 30;
   display: flex;
-  width: min(20rem, calc(100vw - 32px));
+  width: min(18rem, calc(100vw - 380px));
   flex-direction: column;
   gap: 8px;
   pointer-events: none;
+}
+
+@media (max-height: 940px) {
+  .zilla-app {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .zilla-header {
+    margin-bottom: 6px;
+  }
+
+  .plan-column {
+    gap: 6px;
+  }
+
+  .project-summary,
+  .gantt-caption,
+  .phase-description {
+    display: none;
+  }
+
+  .phase-card {
+    padding: 6px 12px;
+  }
+
+  .phase-card h2 {
+    font-size: 1.05rem;
+    line-height: 1.2;
+  }
+
+  .phase-hint,
+  .demo-hint {
+    display: none;
+  }
+
+  .money-card {
+    padding: 6px 10px;
+  }
+
+  .money-card .font-display {
+    font-size: 1.05rem;
+    line-height: 1.2;
+  }
 }
 
 .toast-card {

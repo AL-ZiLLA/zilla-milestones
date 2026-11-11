@@ -251,8 +251,8 @@ export function AppShell() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh flex-col px-3 py-3 md:px-5 lg:h-dvh lg:overflow-hidden">
-      <header className="mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3">
+    <main className="zilla-app mx-auto flex min-h-dvh flex-col px-3 py-3 md:px-4 lg:h-dvh lg:overflow-hidden">
+      <header className="zilla-header mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="grid h-11 w-11 place-items-center rounded-2xl bg-lime text-ink">
             <span className="font-display text-2xl font-bold">Z</span>
@@ -376,12 +376,12 @@ export function AppShell() {
           </form>
         </section>
       ) : (
-        <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="flex min-h-0 flex-col gap-3 overflow-auto lg:overflow-hidden">
+        <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_300px] min-[1440px]:grid-cols-[minmax(0,1fr)_340px] min-[1700px]:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="plan-column flex min-h-0 flex-col gap-3 overflow-auto lg:overflow-hidden">
             <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
-              <div>
-                <h1 className="font-display text-2xl text-white md:text-3xl">{project.name}</h1>
-                <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-300">{project.summary}</p>
+              <div className="min-w-0">
+                <h1 className="font-display text-xl text-white md:text-2xl">{project.name}</h1>
+                <p className="project-summary mt-1 line-clamp-1 max-w-3xl text-sm leading-6 text-zinc-300">{project.summary}</p>
               </div>
               <button
                 type="button"
@@ -393,7 +393,7 @@ export function AppShell() {
             </div>
 
             {money ? (
-              <div className="grid shrink-0 grid-cols-2 gap-2 xl:grid-cols-4" data-testid="money-bar">
+              <div className="grid shrink-0 grid-cols-4 gap-2" data-testid="money-bar">
                 <MoneyCell label="Contract" value={formatMoney(money.contract)} />
                 <MoneyCell label="Paid" value={formatMoney(money.paid)} tone="paid" />
                 <MoneyCell label="Invoiced" value={formatMoney(money.invoiced)} tone="invoiced" />
@@ -417,11 +417,11 @@ export function AppShell() {
               ))}
             </div>
 
-            <div className="min-h-[320px] flex-1 lg:min-h-0">
-              <p className="mb-1 text-[11px] uppercase tracking-[0.16em] text-lime">
+            <div className="gantt-block flex min-h-[360px] flex-1 flex-col lg:min-h-0">
+              <p className="gantt-caption mb-1 text-[11px] uppercase tracking-[0.16em] text-lime">
                 Bryntum Gantt · payment gates are diamonds · padlock means locked until paid
               </p>
-              <div className="h-[420px] lg:h-[calc(100%-1.25rem)]">
+              <div className="h-[420px] w-full lg:h-auto lg:min-h-0 lg:flex-1">
                 <GanttPanel key={project.id} phases={project.phases} onSelect={setSelectedId} />
               </div>
             </div>
@@ -687,12 +687,12 @@ function PhaseCard({
     phase.paymentStatus !== "cancelled";
   const canForward = phase.paymentStatus === "invoiced" || phase.paymentStatus === "overdue";
   return (
-    <div className="panel shrink-0 rounded-2xl p-4">
+    <div className="phase-card panel shrink-0 rounded-2xl p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Phase {index}</p>
           <h2 className="font-display text-xl text-white">{phase.name}</h2>
-          <p className="mt-1 line-clamp-1 text-sm text-zinc-300">{phase.description}</p>
+          <p className="phase-description mt-1 line-clamp-1 text-sm text-zinc-300">{phase.description}</p>
         </div>
         <StatusText status={phase.paymentStatus} />
       </div>
@@ -748,11 +748,11 @@ function PhaseCard({
         </button>
       </div>
       {demoPaypal && phase.paypalInvoiceId ? (
-        <p className="mt-2 text-xs text-zinc-500">Demo mode uses a mock invoice id, so PayPal will not open a payable invoice.</p>
+        <p className="phase-hint mt-2 text-xs text-zinc-500">Demo mode uses a mock invoice id, so PayPal will not open a payable invoice.</p>
       ) : null}
       <details className="demo-drawer mt-3 rounded-2xl border border-line bg-ink/50 px-3 py-2" data-testid="demo-controls">
         <summary className="text-sm text-zinc-300">Demo controls</summary>
-        <p className="mt-2 text-xs text-zinc-500">
+        <p className="demo-hint mt-2 text-xs text-zinc-500">
           {clockDate
             ? `Demo clock is ${clockDate}. Fast-forward moves it 7 days past the Net-7 due date. It does not backdate the invoice.`
             : "The clock follows America/Los_Angeles until you fast-forward. Simulate stays off the main path."}

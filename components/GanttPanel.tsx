@@ -16,6 +16,7 @@ interface GanttLike {
   project: { loadInlineData: (data: object) => Promise<void> };
   setTimeSpan?: (start: Date, end: Date) => void;
   tickSize?: number;
+  rowHeight?: number;
   viewPreset?: unknown;
   columns?: { getAt: (index: number) => { width: number; minWidth?: number } | undefined };
   subGrids?: { locked?: { width: number } };
@@ -49,13 +50,13 @@ function columnLayout(width: number): {
   gate: number;
   locked: number;
 } {
-  if (width >= 1400) {
-    return { name: 210, date: 110, amount: 120, payment: 112, gate: 72, locked: 210 + 110 + 110 + 120 + 112 + 72 };
+  if (width >= 1350) {
+    return { name: 220, date: 108, amount: 112, payment: 96, gate: 60, locked: 220 + 108 + 108 + 112 + 96 + 60 };
   }
-  if (width >= 1000) {
-    return { name: 210, date: 110, amount: 112, payment: 104, gate: 68, locked: 210 + 110 + 110 + 112 + 104 + 68 };
+  if (width >= 1050) {
+    return { name: 210, date: 100, amount: 108, payment: 92, gate: 56, locked: 210 + 100 + 100 + 108 + 92 + 56 };
   }
-  return { name: 168, date: 110, amount: 104, payment: 96, gate: 64, locked: 168 + 110 + 110 + 104 + 96 + 64 };
+  return { name: 204, date: 90, amount: 112, payment: 92, gate: 52, locked: 204 + 90 + 90 + 112 + 92 + 52 };
 }
 
 function planStartYear(phases: Phase[]): number {
@@ -166,6 +167,13 @@ function chartData(phases: Phase[]) {
   };
 }
 
+function fitRowHeight(hostHeight: number, rowCount: number): number {
+  const header = 64;
+  const room = hostHeight - header;
+  if (room <= 0 || rowCount <= 0) return 40;
+  return Math.max(30, Math.min(44, Math.floor(room / rowCount)));
+}
+
 function dateCell(
   record: { get: (field: string) => unknown },
   labelField: string,
@@ -195,12 +203,14 @@ function frame(chart: GanttLike, phases: Phase[], host: HTMLElement) {
     }
   });
   if (chart.subGrids?.locked) chart.subGrids.locked.width = layout.locked;
+  const rowCount = phases.length + phases.reduce((count, phase) => count + phase.dependencies.length, 0);
+  chart.rowHeight = fitRowHeight(host.clientHeight, rowCount);
   const start = phases.map((phase) => phase.startDate).sort()[0];
   const end = phases.map((phase) => phase.endDate).sort().at(-1);
   if (!start || !end) return;
   const startDate = addDays(start, -2);
   const endDate = addDays(end, 7);
-  const timeline = Math.max(220, host.clientWidth - layout.locked - 8);
+  const timeline = Math.max(140, host.clientWidth - layout.locked - 8);
   const tick = timelineTickSize(timeline, daysBetween(startDate, endDate));
   const header = timelineHeader(tick);
   if (chart._zillaHeader !== header.id) {
@@ -272,8 +282,8 @@ export function GanttPanel({
         }
         chart = new mod.Gantt({
           appendTo: host,
-          rowHeight: 46,
-          barMargin: 8,
+          rowHeight: 40,
+          barMargin: 6,
           viewPreset: timelineHeader(120),
           subGridConfigs: {
             locked: { width: layout.locked },
@@ -287,7 +297,7 @@ export function GanttPanel({
             daysPerMonth: 30,
           },
           columns: [
-            { type: "name", text: "Milestone", width: layout.name, minWidth: layout.name },
+            { type: "name", text: "Milestone", tooltip: "Milestone", width: layout.name, minWidth: layout.name },
             {
               field: "zillaStart",
               text: "Start",
@@ -313,7 +323,8 @@ export function GanttPanel({
             },
             {
               field: "paymentStatus",
-              text: "Payment",
+              text: "Pay",
+              tooltip: "Payment",
               width: layout.payment,
               htmlEncode: false,
               renderer: ({ record }: { record: { get: (field: string) => unknown } }) => {
@@ -326,6 +337,7 @@ export function GanttPanel({
             {
               field: "gateState",
               text: "Gate",
+              tooltip: "Payment gate",
               width: layout.gate,
               align: "center",
               htmlEncode: false,
