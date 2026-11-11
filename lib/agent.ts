@@ -27,7 +27,8 @@ const DOMAIN_TOOLS = [
     type: "function",
     function: {
       name: "get_project_state",
-      description: "Read milestone names, dates, amounts, payment status, blocks, and PayPal invoice ids.",
+      description:
+        "Read milestone names, current and baseline start/finish dates, overdue-gate day shifts, amounts, payment status, blocks, and PayPal invoice ids.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
@@ -137,6 +138,8 @@ Never claim an invoice was sent, a payment landed, or an email went out unless a
 Reply in plain sentences. You may use **bold** for amounts and phase names, and bullet lists. Do not put the client's email address in a reply.
 Client updates and PayPal reminders stay drafts until a person approves them. Never send them yourself.
 Phase numbers are 1-based in the current plan order.
+Each phase includes start and end (current dates), baselineStart and baselineFinish (the start and finish before the overdue payment gate moved it), and overdueShiftDays (calendar days that gate pushed the phase).
+When the user asks what is overdue or what that did to the schedule, report from those fields. Name each overdue phase. For every phase, state overdueShiftDays and the baseline versus current start and finish. A phase moved when overdueShiftDays is greater than zero.
 Current project:
 ${projectSnapshot(project)}`;
 }

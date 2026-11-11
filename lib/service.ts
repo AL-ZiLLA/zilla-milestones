@@ -19,6 +19,7 @@ import {
   buildPhasesFromPlan,
   findPhase,
   markPhaseStatus,
+  phaseBaseline,
   recomputeBlocks,
   shiftPhaseAndDependents,
 } from "@/lib/schedule";
@@ -453,19 +454,25 @@ export function unpaidSummary(project: Project): string {
 }
 
 export function projectSnapshot(project: Project): string {
-  const phases = project.phases.map((phase, index) => ({
-    phase: index + 1,
-    name: phase.name,
-    status: phase.paymentStatus,
-    amount: phase.amount,
-    start: phase.startDate,
-    end: phase.endDate,
-    due: phase.dueDate,
-    invoiceDate: phase.invoiceDate ?? null,
-    blocked: phase.blocked,
-    invoiceId: phase.paypalInvoiceId ?? null,
-    payerUrl: phase.paypalPayerUrl ?? null,
-  }));
+  const phases = project.phases.map((phase, index) => {
+    const baseline = phaseBaseline(project.phases, phase);
+    return {
+      phase: index + 1,
+      name: phase.name,
+      status: phase.paymentStatus,
+      amount: phase.amount,
+      start: phase.startDate,
+      end: phase.endDate,
+      baselineStart: baseline.baselineStart,
+      baselineFinish: baseline.baselineFinish,
+      overdueShiftDays: baseline.overdueShiftDays,
+      due: phase.dueDate,
+      invoiceDate: phase.invoiceDate ?? null,
+      blocked: phase.blocked,
+      invoiceId: phase.paypalInvoiceId ?? null,
+      payerUrl: phase.paypalPayerUrl ?? null,
+    };
+  });
   return JSON.stringify(
     {
       name: project.name,
